@@ -1208,20 +1208,46 @@
         // ========================================
         // AUTO REFRESH
         // ========================================
+        function getNextScheduledRefreshTime() {
+            // Logic App runs every 30 minutes (on the hour and half-hour in Pacific Time)
+            // Calculate next :00 or :30 mark in Pacific Time
+            const now = new Date();
+            const pacificTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+            
+            const currentMinute = pacificTime.getMinutes();
+            const currentSecond = pacificTime.getSeconds();
+            
+            let minutesUntilNext;
+            if (currentMinute < 30) {
+                // Next refresh at :30
+                minutesUntilNext = 30 - currentMinute;
+            } else {
+                // Next refresh at next hour :00
+                minutesUntilNext = 60 - currentMinute;
+            }
+            
+            // Subtract current seconds to get exact time
+            const secondsUntilNext = (minutesUntilNext * 60) - currentSecond;
+            
+            return Date.now() + (secondsUntilNext * 1000);
+        }
+
         function startAutoRefresh() {
             stopAutoRefresh(); // Clear existing timer
 
-            // Set next refresh time relative to now (page-controlled schedule)
-            nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL;
+            // Calculate next scheduled refresh time (synced to :00 and :30)
+            nextAutoRefreshAt = getNextScheduledRefreshTime();
             startAutoRefreshCountdown();
 
+            // Check every minute if we've passed the scheduled time
             autoRefreshTimer = setInterval(() => {
-                if (isLiveMode) {
+                if (isLiveMode && Date.now() >= nextAutoRefreshAt) {
                     console.log('Auto-refreshing data...');
                     fetchAttackData();
-                    nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL;
+                    // Calculate next scheduled time after this refresh
+                    nextAutoRefreshAt = getNextScheduledRefreshTime();
                 }
-            }, AUTO_REFRESH_INTERVAL);
+            }, 60000); // Check every minute instead of waiting full 30 min
         }
 
         function stopAutoRefresh() {
