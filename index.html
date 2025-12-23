@@ -877,11 +877,12 @@
             const usernameContainer = document.getElementById('username-container');
             usernameContainer.innerHTML = '';
 
-            // Aggregate all usernames across all attacks
-            // To avoid inflation: distribute each IP's attack count across its usernames
-            const usernameCount = {};
+            // Count how many unique IPs tried each username
+            // This is the clearest metric: "Which usernames are attackers targeting?"
+            const usernameIPs = {}; // username -> Set of IPs
+            
             attackData.forEach(attack => {
-                const rowCount = toCount(attack.attack_count ?? attack.FailureCount);
+                const ip = attack.ip || attack.IpAddress || 'unknown';
                 let accounts = attack.target_accounts;
                 
                 // Handle both string (from KQL make_set) and array formats
@@ -893,25 +894,28 @@
                     }
                 }
                 
-                if (accounts && Array.isArray(accounts) && accounts.length > 0) {
-                    // Distribute attack count evenly across usernames tried by this IP
-                    const countPerUsername = rowCount / accounts.length;
-                    
+                if (accounts && Array.isArray(accounts)) {
+                    // Get unique cleaned usernames for this IP
+                    const seenUsernames = new Set();
                     accounts.forEach(username => {
                         if (username) {
-                            // Clean up backslashes and domain prefixes (e.g., "\ADMIN" or "DOMAIN\ADMIN")
-                            const parts = username.split('\\');
+                            const parts = String(username).split(/\\+/);
                             const cleanUsername = parts[parts.length - 1].toUpperCase().trim();
-                            if (cleanUsername) {
-                                usernameCount[cleanUsername] = (usernameCount[cleanUsername] || 0) + countPerUsername;
+                            if (cleanUsername && !seenUsernames.has(cleanUsername)) {
+                                seenUsernames.add(cleanUsername);
+                                if (!usernameIPs[cleanUsername]) {
+                                    usernameIPs[cleanUsername] = new Set();
+                                }
+                                usernameIPs[cleanUsername].add(ip);
                             }
                         }
                     });
                 }
             });
 
-            // Get top 5 usernames
-            const topUsernames = Object.entries(usernameCount)
+            // Get top 5 usernames by number of unique IPs that tried them
+            const topUsernames = Object.entries(usernameIPs)
+                .map(([username, ips]) => [username, ips.size])
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5);
 
@@ -920,12 +924,12 @@
                 return;
             }
 
-            topUsernames.forEach(([username, count]) => {
+            topUsernames.forEach(([username, ipCount]) => {
                 const item = document.createElement('div');
                 item.className = 'username-item';
                 item.innerHTML = `
                     <span class="username-name">${username}</span>
-                    <span class="username-count">${Math.round(count).toLocaleString()}</span>
+                    <span class="username-count">${ipCount} IPs</span>
                 `;
                 
                 // Make it clickable to show IPs that tried this username
@@ -961,25 +965,24 @@
                 
                 if (accounts && Array.isArray(accounts) && accounts.length > 0) {
                     const hasUsername = accounts.some(acc => {
-                        const parts = acc.split('\\');
+                        // Handle both single and double backslashes, and clean whitespace
+                        const parts = String(acc).split(/\\+/);
                         const cleanName = parts[parts.length - 1].toUpperCase().trim();
                         return cleanName === username;
                     });
                     
                     if (hasUsername) {
-                        const totalCount = toCount(attack.attack_count ?? attack.FailureCount);
-                        // Calculate distributed portion (same as leaderboard logic)
-                        const distributedCount = totalCount / accounts.length;
-                        matchingAttacks.push({
-                            ...attack,
-                            distributedCount: distributedCount
-                        });
+                        matchingAttacks.push(attack);
                     }
                 }
             });
 
-            // Sort by distributed count
-            matchingAttacks.sort((a, b) => b.distributedCount - a.distributedCount);
+            // Sort by full attack count
+            matchingAttacks.sort((a, b) => {
+                const countA = toCount(a.attack_count ?? a.FailureCount);
+                const countB = toCount(b.attack_count ?? b.FailureCount);
+                return countB - countA;
+            });
 
             if (matchingAttacks.length === 0) {
                 list.innerHTML = '<p style="color: #888;">No IPs found</p>';
@@ -988,14 +991,14 @@
                     const ip = attack.ip || attack.IpAddress || 'Unknown';
                     const city = attack.city || attack.City || 'Unknown';
                     const country = attack.country || attack.Country || 'Unknown';
-                    const count = Math.round(attack.distributedCount);
+                    const count = toCount(attack.attack_count ?? attack.FailureCount);
                     
                     const item = document.createElement('div');
                     item.className = 'username-detail-item';
                     item.innerHTML = `
                         <div class="ip">${ip}</div>
                         <div class="location">${city}, ${country}</div>
-                        <div class="attempts">${count.toLocaleString()} attempts</div>
+                        <div class="attempts">${count.toLocaleString()} total attacks</div>
                     `;
                     list.appendChild(item);
                 });
