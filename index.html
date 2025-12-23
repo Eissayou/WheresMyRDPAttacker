@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Azure Honeypot Threat Map - SOC Dashboard</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin=""/>
+    
+    <!-- Leaflet MarkerCluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    
+    <style>
+        /* SVG Icons */
+        .icon {
+            width: 16px;
+            height: 16px;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        .icon-lg {
+            width: 20px;
+            height: 20px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #000;
+            color: #00ff00;
+            overflow: hidden;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .hud-panel {
+                font-size: 11px;
+                padding: 10px;
+            }
+            #stats-panel {
+                width: calc(100% - 20px);
+                left: 10px;
+                top: 10px;
+            }
+            #target-panel {
+                width: calc(100% - 20px);
+                right: 10px;
+                top: auto;
+                bottom: 10px;
+            }
+            #username-panel {
+                display: none; /* Hide on mobile to reduce clutter */
+            }
+            #feed-panel {
+                display: none; /* Hide on mobile to reduce clutter */
+            }
+            #history-panel {
+                display: none; /* Hide on mobile to reduce clutter */
+            }
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* HUD Panel Base Styles */
+        .hud-panel {
+            position: absolute;
+            background: rgba(0, 20, 40, 0.85);
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        .hud-panel h2 {
+            color: #00ffff;
+            font-size: 18px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #00ffff;
+            padding-bottom: 5px;
+        }
+
+        /* Leaderboard Panel (Top Left) */
+        #stats-panel {
+            top: 90px;  /* Moved down to avoid zoom controls */
+            left: 20px;
+            width: 340px;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 8px;
+            background: rgba(0, 50, 100, 0.3);
+            border-left: 3px solid #00ffff;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .leaderboard-item:hover {
+            background: rgba(0, 50, 100, 0.5);
+            border-left-width: 5px;
+        }
+
+        .leaderboard-rank {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00ffff;
+            min-width: 30px;
+        }
+
+        .leaderboard-country {
+            flex: 1;
+            color: #00ff00;
+            font-size: 14px;
+            margin: 0 10px;
+        }
+
+        .leaderboard-count {
+            color: #ff6666;
+            font-weight: bold;
+            font-size: 16px;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .leaderboard-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #ff0000, #ff6666);
+            margin-top: 4px;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+
+        .update-time {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 255, 255, 0.3);
+            font-size: 11px;
+            color: #888;
+            text-align: center;
+        }
+
+        .update-time-value {
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        /* Target Info Panel (Top Right) */
+        #target-panel {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+        }
+
+        /* Username Leaderboard Panel (Middle Right) */
+        #username-panel {
+            top: 240px;
+            right: 20px;
+            width: 280px;
+        }
+
+        .username-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 6px 0;
+            padding: 6px 8px;
+            background: rgba(50, 0, 100, 0.3);
+            border-left: 3px solid #ff00ff;
+            border-radius: 4px;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .username-item {
+            cursor: pointer;
+        }
+
+        .username-item:hover {
+            background: rgba(50, 0, 100, 0.5);
+            border-left-width: 5px;
+            transform: translateX(3px);
+        }
+
+        .username-name {
+            color: #ff00ff;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .username-count {
+            color: #ffaa00;
+            font-weight: bold;
+        }
+
+        #target-panel p {
+            color: #00ff00;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+
+        .target-label {
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        /* Feed Panel (Bottom Left) */
+        #feed-panel {
+            bottom: 20px;
+            left: 20px;
+            width: 350px;
+            max-height: 250px;
+        }
+
+        #attack-feed {
+            max-height: 180px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .feed-item {
+            background: rgba(0, 50, 100, 0.5);
+            border-left: 3px solid #ff0000;
+            padding: 8px;
+            margin: 5px 0;
+            font-size: 12px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .feed-item .ip {
+            color: #ff6666;
+            font-weight: bold;
+        }
+
+        .feed-item .location {
+            color: #ffaa00;
+        }
+
+        .feed-item .count {
+            color: #00ff00;
+        }
+
+        /* History Controls (Bottom Right) */
+        #history-panel {
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+        }
+
+        #date-picker {
+            width: 100%;
+            padding: 8px;
+            margin-top: 10px;
+            background: rgba(0, 50, 100, 0.8);
+            border: 1px solid #00ffff;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #date-picker::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+        }
+
+        .mode-indicator {
+            display: inline-block;
+            padding: 3px 8px;
+            background: #00ff00;
+            color: #000;
+            font-size: 11px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .mode-indicator.live {
+            background: #00ff00;
+            animation: pulse 2s infinite;
+        }
+
+        .mode-indicator.history {
+            background: #ffaa00;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Error Message */
+        #error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(139, 0, 0, 0.9);
+            color: #fff;
+            padding: 20px 40px;
+            border: 2px solid #ff0000;
+            border-radius: 8px;
+            z-index: 2000;
+            display: none;
+            text-align: center;
+        }
+
+        #error-message h3 {
+            margin-bottom: 10px;
+            color: #ff6666;
+        }
+
+        /* Username Detail Modal */
+        #username-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #username-modal-content {
+            background: rgba(0, 20, 40, 0.95);
+            border: 2px solid #ff00ff;
+            border-radius: 8px;
+            padding: 25px;
+            max-width: 600px;
+            max-height: 70vh;
+            overflow-y: auto;
+            box-shadow: 0 0 10px rgba(255, 0, 255, 0.3);
+        }
+
+        #username-modal h3 {
+            color: #ff00ff;
+            margin-bottom: 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #ff00ff;
+            padding-bottom: 10px;
+        }
+
+        .username-detail-item {
+            background: rgba(0, 50, 100, 0.3);
+            border-left: 3px solid #00ffff;
+            padding: 10px;
+            margin: 8px 0;
+            border-radius: 4px;
+        }
+
+        .username-detail-item .ip {
+            color: #ff6666;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .username-detail-item .location {
+            color: #00ff00;
+            font-size: 13px;
+        }
+
+        .username-detail-item .attempts {
+            color: #ffaa00;
+            font-size: 13px;
+        }
+
+        #username-modal-close {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 0, 255, 0.2);
+            border: 1px solid #ff00ff;
+            color: #ff00ff;
+            cursor: pointer;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            width: 100%;
+            transition: all 0.3s;
+        }
+
+        #username-modal-close:hover {
+            background: rgba(255, 0, 255, 0.4);
+        }
+
+        #username-modal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #username-modal-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        #username-modal-content::-webkit-scrollbar-thumb {
+            background: #ff00ff;
+            border-radius: 4px;
+        }
+
+        /* Loading Indicator */
+        .loading {
+            color: #00ffff;
+            font-style: italic;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50%, 100% { opacity: 1; }
+            25%, 75% { opacity: 0.5; }
+        }
+
+        /* Scrollbar Styling */
+        #attack-feed::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #attack-feed::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        #attack-feed::-webkit-scrollbar-thumb {
+            background: #00ffff;
+            border-radius: 4px;
+        }
+
+        /* Auto-refresh Countdown */
+        .auto-refresh {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 255, 255, 0.2);
+            font-size: 11px;
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .auto-refresh strong {
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        @keyframes markerGlow {
+            0% {
+                opacity: 0;
+                filter: drop-shadow(0 0 0px currentColor);
+            }
+            50% {
+                opacity: 0.8;
+                filter: drop-shadow(0 0 20px currentColor);
+            }
+            100% {
+                opacity: 1;
+                filter: drop-shadow(0 0 8px currentColor);
+            }
+        }
+
+        .attack-marker {
+            animation: markerGlow 0.8s ease-out;
+            filter: drop-shadow(0 0 8px currentColor);
+            transform-box: fill-box;
+            transform-origin: center;
+            will-change: transform, opacity, filter;
+        }
+
+        /* Custom Cluster Styles */
+        .marker-cluster-small {
+            background-color: rgba(0, 255, 0, 0.6);
+        }
+        .marker-cluster-small div {
+            background-color: rgba(0, 255, 0, 0.8);
+        }
+
+        .marker-cluster-medium {
+            background-color: rgba(255, 170, 0, 0.6);
+        }
+        .marker-cluster-medium div {
+            background-color: rgba(255, 170, 0, 0.8);
+        }
+
+        .marker-cluster-large {
+            background-color: rgba(255, 0, 0, 0.6);
+        }
+        .marker-cluster-large div {
+            background-color: rgba(255, 0, 0, 0.8);
+        }
+
+        .marker-cluster {
+            border: 2px solid #fff;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+        }
+
+        .marker-cluster div {
+            width: 30px;
+            height: 30px;
+            margin-left: 5px;
+            margin-top: 5px;
+            text-align: center;
+            border-radius: 15px;
+            font: 12px "Courier New", monospace;
+            font-weight: bold;
+            color: #000;
+            line-height: 30px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Map -->
+    <div id="map"></div>
+
+    <!-- Leaderboard Panel (Top Left) -->
+    <div class="hud-panel" id="stats-panel">
+        <h2>
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 3v18h18"/>
+                <path d="M18 17V9"/>
+                <path d="M13 17V5"/>
+                <path d="M8 17v-3"/>
+            </svg>
+            Top Attacking Countries
+            <span class="mode-indicator live" id="mode-indicator">LIVE</span>
+        </h2>
+        <div id="leaderboard-container">
+            <p class="loading">Loading leaderboard...</p>
+        </div>
+        <div class="auto-refresh" id="auto-refresh-row">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 1 1-3-6.7"/>
+                <path d="M21 3v7h-7"/>
+            </svg>
+            Next auto-refresh in <strong id="auto-refresh-countdown">--:--</strong>
+        </div>
+        <div class="update-time">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+            </svg>
+            Last Updated: <span class="update-time-value" id="last-update">--:--:--</span>
+        </div>
+    </div>
+
+    <!-- Target Info Panel (Top Right) -->
+    <div class="hud-panel" id="target-panel">
+        <h2>
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="6"/>
+                <circle cx="12" cy="12" r="2"/>
+            </svg>
+            Target Information
+        </h2>
+        <p><span class="target-label">Asset:</span> Azure VM (Honeypot)</p>
+        <p><span class="target-label">Public IP:</span> 4.154.169.43</p>
+        <p><span class="target-label">Service:</span> RDP (Port 3389)</p>
+        <p><span class="target-label">Location:</span> Azure Cloud</p>
+        <p><span class="target-label">Status:</span> <span style="color: #00ff00;">● MONITORING</span></p>
+    </div>
+
+    <!-- Username Leaderboard Panel (Middle Right) -->
+    <div class="hud-panel" id="username-panel">
+        <h2>
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/>
+                <path d="M12 14c-4 0-8 2-8 6v2h16v-2c0-4-4-6-8-6z"/>
+            </svg>
+            Top Usernames Tried
+        </h2>
+        <div id="username-container">
+            <p class="loading">Loading usernames...</p>
+        </div>
+    </div>
+
+    <!-- Attack Feed Panel (Bottom Left) -->
+    <div class="hud-panel" id="feed-panel">
+        <h2>
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            Recent Attack Feed
+        </h2>
+        <div id="attack-feed">
+            <p class="loading">Waiting for data...</p>
+        </div>
+    </div>
+
+    <!-- History Controls (Bottom Right) -->
+    <div class="hud-panel" id="history-panel">
+        <h2>
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            Historical Data
+        </h2>
+        <label for="date-picker" style="color: #888; font-size: 12px;">Select Date:</label>
+        <input type="date" id="date-picker" max="">
+    </div>
+
+    <!-- Error Message -->
+    <div id="error-message">
+        <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: block; margin: 0 auto 10px;">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <h3>No Data Available</h3>
+        <p id="error-text"></p>
+    </div>
+
+    <!-- Username Detail Modal -->
+    <div id="username-modal">
+        <div id="username-modal-content">
+            <h3 id="username-modal-title">IPs that tried username</h3>
+            <div id="username-modal-list"></div>
+            <button id="username-modal-close" type="button">Close</button>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+            crossorigin=""></script>
+    
+    <!-- Leaflet MarkerCluster JS -->
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+    <script>
+        // ========================================
+        // CONFIGURATION
+        // ========================================
+        // ⚠️ REPLACE WITH YOUR AZURE STORAGE ACCOUNT NAME
+        const STORAGE_ACCOUNT = 'honeypotpublicdata'; // e.g., 'myhoneypotdata'
+        const BLOB_CONTAINER = 'public-data';
+        const BLOB_BASE_URL = `https://${STORAGE_ACCOUNT}.blob.core.windows.net/${BLOB_CONTAINER}`;
+        
+        const AUTO_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes (matches Logic App)
+        const AUTO_REFRESH_BUFFER_MS = 2 * 60 * 1000; // UI buffer to allow blob/pipeline delay
+
+        // ========================================
+        // GLOBAL VARIABLES
+        // ========================================
+        let map;
+        let markers = [];
+        let markerClusterGroup;
+        let attackData = [];
+        let isLiveMode = true;
+        let autoRefreshTimer;
+        let autoRefreshCountdownTimer;
+        let nextAutoRefreshAt;
+
+        function toCount(value) {
+            if (value == null) return 0;
+            if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+            if (typeof value === 'string') {
+                const cleaned = value.replace(/,/g, '').trim();
+                const parsed = Number(cleaned);
+                return Number.isFinite(parsed) ? parsed : 0;
+            }
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        // ========================================
+        // INITIALIZE MAP
+        // ========================================
+        function initMap() {
+            map = L.map('map', {
+                center: [20, 0],
+                zoom: 2,
+                minZoom: 2,
+                maxZoom: 18,
+                worldCopyJump: true,
+                maxBounds: L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180)),
+                maxBoundsViscosity: 1.0
+            });
+
+            // Dark theme basemap (CartoDB Dark Matter)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 20
+            }).addTo(map);
+
+            // Initialize marker cluster group
+            markerClusterGroup = L.markerClusterGroup({
+                spiderfyOnMaxZoom: true,         // Enable spider when fully zoomed (shows stacked markers)
+                showCoverageOnHover: false,      // Cleaner hover (no blue overlay)
+                zoomToBoundsOnClick: true,       // Zoom in when clicking cluster
+                maxClusterRadius: 60,            // Tighter clustering for cleaner look
+                disableClusteringAtZoom: 12,     // Stop clustering at city-level zoom
+                spiderfyDistanceMultiplier: 2,   // Larger spread for easier clicking
+                spiderfyDistanceSurplus: 40,     // Extra distance between markers
+                spiderLegPolylineOptions: {      // Make spider legs more visible
+                    weight: 2,
+                    color: '#00ffff',
+                    opacity: 0.6
+                },
+                animate: true,                   // Smooth animations
+                animateAddingMarkers: false,     // Disable to avoid errors with circle markers
+                iconCreateFunction: function(cluster) {
+                    const childCount = cluster.getChildCount();
+                    let c = ' marker-cluster-';
+                    if (childCount < 10) {
+                        c += 'small';
+                    } else if (childCount < 50) {
+                        c += 'medium';
+                    } else {
+                        c += 'large';
+                    }
+                    return new L.DivIcon({
+                        html: '<div><span>' + childCount + '</span></div>',
+                        className: 'marker-cluster' + c,
+                        iconSize: new L.Point(40, 40)
+                    });
+                }
+            });
+            map.addLayer(markerClusterGroup);
+        }
+
+        // ========================================
+        // FETCH ATTACK DATA
+        // ========================================
+        async function fetchAttackData(date = null) {
+            const targetDate = date || getTodayDate();
+            const fileName = `attacks_${targetDate}.json`;
+            // Cache-bust so the dashboard reliably updates after new blobs are written
+            const url = `${BLOB_BASE_URL}/${fileName}?v=${Date.now()}`;
+
+            console.log(`Fetching: ${url}`);
+
+            try {
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error(`No attack data found for ${targetDate}`);
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (!Array.isArray(data) || data.length === 0) {
+                    throw new Error(`No attacks recorded for ${targetDate}`);
+                }
+
+                attackData = data;
+                updateDashboard();
+                hideError();
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+                showError(error.message);
+                clearDashboard();
+            }
+        }
+
+        // ========================================
+        // UPDATE DASHBOARD
+        // ========================================
+        function updateDashboard() {
+            clearMarkers();
+            updateLeaderboard();
+            updateUsernameLeaderboard();
+            updateFeed();
+            plotMarkers();
+            updateLastUpdateTime();
+        }
+
+        // ========================================
+        // PLOT MARKERS ON MAP
+        // ========================================
+        function plotMarkers() {
+            attackData.forEach(attack => {
+                const lat = (attack.lat ?? (attack.Latitude != null ? parseFloat(attack.Latitude) : NaN));
+                const lon = (attack.lon ?? (attack.Longitude != null ? parseFloat(attack.Longitude) : NaN));
+
+                if (isNaN(lat) || isNaN(lon)) {
+                    return; // Skip invalid coordinates
+                }
+
+                const attackCount = toCount(attack.attack_count ?? attack.FailureCount);
+
+                // Marker color based on failure count
+                let markerColor = '#00ff00'; // Green (low)
+                if (attackCount > 50) {
+                    markerColor = '#ff0000'; // Red (high)
+                } else if (attackCount > 20) {
+                    markerColor = '#ff6600'; // Orange (medium)
+                } else if (attackCount > 5) {
+                    markerColor = '#ffaa00'; // Yellow (low-medium)
+                }
+
+                const marker = L.circleMarker([lat, lon], {
+                    radius: Math.min(5 + (attackCount / 5), 20),
+                    fillColor: markerColor,
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8,
+                    className: 'attack-marker'
+                });
+
+                // Ensure CSS glow uses the marker's own severity color (currentColor)
+                marker.on('add', () => {
+                    const el = marker.getElement ? marker.getElement() : marker._path;
+                    if (el) {
+                        el.style.color = markerColor;
+                    }
+                });
+
+                // Popup with attack details
+                const ip = attack.ip || attack.IpAddress;
+                const city = attack.city || attack.City || 'Unknown';
+                const state = attack.state || attack.State || '';
+                const country = attack.country || attack.Country || 'Unknown';
+                const firstSeen = attack.first_seen ? formatTimestamp(attack.first_seen) : 'N/A';
+                const lastSeen = attack.last_seen || attack.timestamp;
+                
+                // Parse target_accounts (may be JSON string from KQL)
+                let accounts = attack.target_accounts;
+                if (typeof accounts === 'string') {
+                    try {
+                        accounts = JSON.parse(accounts);
+                    } catch (e) {
+                        accounts = [];
+                    }
+                }
+                const accountsDisplay = (accounts && Array.isArray(accounts)) 
+                    ? accounts.slice(0, 5).map(a => {
+                        const parts = a.split('\\');
+                        return parts[parts.length - 1];
+                    }).join(', ')
+                    : 'N/A';
+
+                const popupContent = `
+                    <div style="font-family: 'Courier New', monospace; color: #000;">
+                        <strong style="color: #ff0000;">ATTACK DETECTED</strong><br>
+                        <strong>IP:</strong> ${ip}<br>
+                        <strong>Location:</strong> ${city}${state ? ', ' + state : ''}, ${country}<br>
+                        <strong>Failed Attempts:</strong> ${attackCount}<br>
+                        <strong>First Seen:</strong> ${firstSeen}<br>
+                        <strong>Last Seen:</strong> ${formatTimestamp(lastSeen)}<br>
+                        <strong>Usernames Tried:</strong> ${accountsDisplay}
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+
+                markers.push(marker);
+                markerClusterGroup.addLayer(marker);
+            });
+        }
+
+        // ========================================
+        // UPDATE LEADERBOARD PANEL
+        // ========================================
+        function updateLeaderboard() {
+            const leaderboardContainer = document.getElementById('leaderboard-container');
+            leaderboardContainer.innerHTML = '';
+
+            // Aggregate attacks by country
+            const countryCount = {};
+            attackData.forEach(attack => {
+                const country = attack.country || attack.Country || 'Unknown';
+                const count = toCount(attack.attack_count ?? attack.FailureCount);
+                countryCount[country] = (countryCount[country] || 0) + count;
+            });
+
+            // Get top 5 countries
+            const topCountries = Object.entries(countryCount)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            if (topCountries.length === 0) {
+                leaderboardContainer.innerHTML = '<p class="loading">No data available</p>';
+                return;
+            }
+
+            const maxCount = topCountries[0][1] || 1;
+
+            topCountries.forEach(([country, count], index) => {
+                const item = document.createElement('div');
+                item.className = 'leaderboard-item';
+                
+                const barWidth = (count / maxCount) * 100;
+                
+                item.innerHTML = `
+                    <span class="leaderboard-rank">#${index + 1}</span>
+                    <div class="leaderboard-country">
+                        ${country}
+                        <div class="leaderboard-bar" style="width: ${barWidth}%"></div>
+                    </div>
+                    <span class="leaderboard-count">${count.toLocaleString()}</span>
+                `;
+                
+                leaderboardContainer.appendChild(item);
+            });
+        }
+
+        // ========================================
+        // UPDATE USERNAME LEADERBOARD
+        // ========================================
+        function updateUsernameLeaderboard() {
+            const usernameContainer = document.getElementById('username-container');
+            usernameContainer.innerHTML = '';
+
+            // Aggregate all usernames across all attacks
+            // To avoid inflation: distribute each IP's attack count across its usernames
+            const usernameCount = {};
+            attackData.forEach(attack => {
+                const rowCount = toCount(attack.attack_count ?? attack.FailureCount);
+                let accounts = attack.target_accounts;
+                
+                // Handle both string (from KQL make_set) and array formats
+                if (typeof accounts === 'string') {
+                    try {
+                        accounts = JSON.parse(accounts);
+                    } catch (e) {
+                        accounts = [];
+                    }
+                }
+                
+                if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+                    // Distribute attack count evenly across usernames tried by this IP
+                    const countPerUsername = rowCount / accounts.length;
+                    
+                    accounts.forEach(username => {
+                        if (username) {
+                            // Clean up backslashes and domain prefixes (e.g., "\ADMIN" or "DOMAIN\ADMIN")
+                            const parts = username.split('\\');
+                            const cleanUsername = parts[parts.length - 1].toUpperCase().trim();
+                            if (cleanUsername) {
+                                usernameCount[cleanUsername] = (usernameCount[cleanUsername] || 0) + countPerUsername;
+                            }
+                        }
+                    });
+                }
+            });
+
+            // Get top 5 usernames
+            const topUsernames = Object.entries(usernameCount)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            if (topUsernames.length === 0) {
+                usernameContainer.innerHTML = '<p class="loading">No usernames detected</p>';
+                return;
+            }
+
+            topUsernames.forEach(([username, count]) => {
+                const item = document.createElement('div');
+                item.className = 'username-item';
+                item.innerHTML = `
+                    <span class="username-name">${username}</span>
+                    <span class="username-count">${Math.round(count).toLocaleString()}</span>
+                `;
+                
+                // Make it clickable to show IPs that tried this username
+                item.addEventListener('click', () => showUsernameDetail(username));
+                
+                usernameContainer.appendChild(item);
+            });
+        }
+
+        // ========================================
+        // SHOW USERNAME DETAIL MODAL
+        // ========================================
+        function showUsernameDetail(username) {
+            const modal = document.getElementById('username-modal');
+            const title = document.getElementById('username-modal-title');
+            const list = document.getElementById('username-modal-list');
+            
+            title.textContent = `IPs that tried "${username}"`;
+            list.innerHTML = '';
+
+            // Find all IPs that tried this username with distributed counts
+            const matchingAttacks = [];
+            attackData.forEach(attack => {
+                let accounts = attack.target_accounts;
+                
+                if (typeof accounts === 'string') {
+                    try {
+                        accounts = JSON.parse(accounts);
+                    } catch (e) {
+                        accounts = [];
+                    }
+                }
+                
+                if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+                    const hasUsername = accounts.some(acc => {
+                        const parts = acc.split('\\');
+                        const cleanName = parts[parts.length - 1].toUpperCase().trim();
+                        return cleanName === username;
+                    });
+                    
+                    if (hasUsername) {
+                        const totalCount = toCount(attack.attack_count ?? attack.FailureCount);
+                        // Calculate distributed portion (same as leaderboard logic)
+                        const distributedCount = totalCount / accounts.length;
+                        matchingAttacks.push({
+                            ...attack,
+                            distributedCount: distributedCount
+                        });
+                    }
+                }
+            });
+
+            // Sort by distributed count
+            matchingAttacks.sort((a, b) => b.distributedCount - a.distributedCount);
+
+            if (matchingAttacks.length === 0) {
+                list.innerHTML = '<p style="color: #888;">No IPs found</p>';
+            } else {
+                matchingAttacks.forEach(attack => {
+                    const ip = attack.ip || attack.IpAddress || 'Unknown';
+                    const city = attack.city || attack.City || 'Unknown';
+                    const country = attack.country || attack.Country || 'Unknown';
+                    const count = Math.round(attack.distributedCount);
+                    
+                    const item = document.createElement('div');
+                    item.className = 'username-detail-item';
+                    item.innerHTML = `
+                        <div class="ip">${ip}</div>
+                        <div class="location">${city}, ${country}</div>
+                        <div class="attempts">${count.toLocaleString()} attempts</div>
+                    `;
+                    list.appendChild(item);
+                });
+            }
+
+            modal.style.display = 'flex';
+        }
+
+        function closeUsernameModal() {
+            document.getElementById('username-modal').style.display = 'none';
+        }
+
+        // ========================================
+        // UPDATE ATTACK FEED
+        // ========================================
+        function updateFeed() {
+            const feedContainer = document.getElementById('attack-feed');
+            feedContainer.innerHTML = '';
+
+            // Get last 5 attacks (sorted by failure count)
+            const topAttacks = [...attackData]
+                .sort((a, b) => toCount(b.attack_count ?? b.FailureCount) - toCount(a.attack_count ?? a.FailureCount))
+                .slice(0, 5);
+
+            if (topAttacks.length === 0) {
+                feedContainer.innerHTML = '<p class="loading">No attacks detected</p>';
+                return;
+            }
+
+            topAttacks.forEach(attack => {
+                const feedItem = document.createElement('div');
+                feedItem.className = 'feed-item';
+                const ip = attack.ip || attack.IpAddress || 'Unknown';
+                const city = attack.city || attack.City || 'Unknown';
+                const country = attack.country || attack.Country || 'Unknown';
+                const count = toCount(attack.attack_count ?? attack.FailureCount);
+                const timestamp = attack.last_seen || attack.timestamp;
+                
+                feedItem.innerHTML = `
+                    <span class="ip">${ip}</span> | 
+                    <span class="location">${city}, ${country}</span><br>
+                    <span class="count">Attempts: ${count.toLocaleString()}</span> | 
+                    ${formatTimestamp(timestamp)}
+                `;
+                feedContainer.appendChild(feedItem);
+            });
+        }
+
+        // ========================================
+        // CLEAR MARKERS
+        // ========================================
+        function clearMarkers() {
+            markerClusterGroup.clearLayers();
+            markers = [];
+        }
+
+        // ========================================
+        // CLEAR DASHBOARD
+        // ========================================
+        function clearDashboard() {
+            clearMarkers();
+            document.getElementById('leaderboard-container').innerHTML = '<p class="loading">No data available</p>';
+            document.getElementById('username-container').innerHTML = '<p class="loading">No data available</p>';
+            document.getElementById('attack-feed').innerHTML = '<p class="loading">No data available</p>';
+        }
+
+        // ========================================
+        // ERROR HANDLING
+        // ========================================
+        function showError(message) {
+            document.getElementById('error-text').textContent = message;
+            document.getElementById('error-message').style.display = 'block';
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                hideError();
+            }, 5000);
+        }
+
+        function hideError() {
+            document.getElementById('error-message').style.display = 'none';
+        }
+
+        // ========================================
+        // UTILITY FUNCTIONS
+        // ========================================
+        function getTodayDate() {
+            // Get current date in Pacific Time (California)
+            const now = new Date();
+            const pacificTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+            const year = pacificTime.getFullYear();
+            const month = String(pacificTime.getMonth() + 1).padStart(2, '0');
+            const day = String(pacificTime.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            // Convert to Pacific Time
+            return date.toLocaleString('en-US', { 
+                timeZone: 'America/Los_Angeles',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        function updateLastUpdateTime() {
+            const now = new Date();
+            // Display in Pacific Time
+            const timeStr = now.toLocaleTimeString('en-US', { 
+                timeZone: 'America/Los_Angeles',
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: false
+            });
+            document.getElementById('last-update').textContent = timeStr + ' PT';
+        }
+
+        // ========================================
+        // MODE SWITCHING
+        // ========================================
+        function switchToLiveMode() {
+            isLiveMode = true;
+            document.getElementById('mode-indicator').textContent = 'LIVE';
+            document.getElementById('mode-indicator').className = 'mode-indicator live';
+            fetchAttackData();
+            startAutoRefresh();
+        }
+
+        function switchToHistoryMode(date) {
+            isLiveMode = false;
+            document.getElementById('mode-indicator').textContent = 'HISTORY';
+            document.getElementById('mode-indicator').className = 'mode-indicator history';
+            stopAutoRefresh();
+            fetchAttackData(date);
+        }
+
+        // ========================================
+        // AUTO REFRESH
+        // ========================================
+        function startAutoRefresh() {
+            stopAutoRefresh(); // Clear existing timer
+
+            // Set next refresh time relative to now (page-controlled schedule)
+            nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL;
+            startAutoRefreshCountdown();
+
+            autoRefreshTimer = setInterval(() => {
+                if (isLiveMode) {
+                    console.log('Auto-refreshing data...');
+                    fetchAttackData();
+                    nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL;
+                }
+            }, AUTO_REFRESH_INTERVAL);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+            }
+
+            stopAutoRefreshCountdown();
+        }
+
+        function startAutoRefreshCountdown() {
+            stopAutoRefreshCountdown();
+
+            const countdownEl = document.getElementById('auto-refresh-countdown');
+            if (!countdownEl) return;
+
+            const render = () => {
+                if (!isLiveMode) {
+                    countdownEl.textContent = 'PAUSED';
+                    return;
+                }
+
+                const remainingMs = Math.max(0, (nextAutoRefreshAt || Date.now()) - Date.now());
+                const remainingSec = Math.ceil(remainingMs / 1000);
+                const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+                const ss = String(remainingSec % 60).padStart(2, '0');
+                countdownEl.textContent = `${mm}:${ss}`;
+            };
+
+            render();
+            autoRefreshCountdownTimer = setInterval(render, 1000);
+        }
+
+        function stopAutoRefreshCountdown() {
+            if (autoRefreshCountdownTimer) {
+                clearInterval(autoRefreshCountdownTimer);
+                autoRefreshCountdownTimer = null;
+            }
+        }
+
+        // ========================================
+        // EVENT LISTENERS
+        // ========================================
+        // Close username modal
+        document.getElementById('username-modal-close').addEventListener('click', closeUsernameModal);
+        document.getElementById('username-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'username-modal') {
+                closeUsernameModal();
+            }
+        });
+
+        document.getElementById('date-picker').addEventListener('change', (e) => {
+            const selectedDate = e.target.value;
+            if (selectedDate) {
+                // Check if selected date is today
+                const today = getTodayDate();
+                if (selectedDate === today) {
+                    switchToLiveMode();
+                } else {
+                    switchToHistoryMode(selectedDate);
+                }
+            } else {
+                switchToLiveMode();
+            }
+        });
+
+        // ========================================
+        // INITIALIZATION
+        // ========================================
+        window.addEventListener('load', () => {
+            // Set max date for date picker to today
+            document.getElementById('date-picker').max = getTodayDate();
+            
+            // Initialize map
+            initMap();
+            
+            // Start in live mode
+            switchToLiveMode();
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopAutoRefresh();
+        });
+    </script>
+</body>
+</html>
