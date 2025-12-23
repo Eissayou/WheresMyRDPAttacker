@@ -62,9 +62,6 @@
             #username-panel {
                 display: none; /* Hide on mobile to reduce clutter */
             }
-            #feed-panel {
-                display: none; /* Hide on mobile to reduce clutter */
-            }
             #history-panel {
                 display: none; /* Hide on mobile to reduce clutter */
             }
@@ -226,53 +223,6 @@
         .target-label {
             color: #00ffff;
             font-weight: bold;
-        }
-
-        /* Feed Panel (Bottom Left) */
-        #feed-panel {
-            bottom: 20px;
-            left: 20px;
-            width: 350px;
-            max-height: 250px;
-        }
-
-        #attack-feed {
-            max-height: 180px;
-            overflow-y: auto;
-            margin-top: 10px;
-        }
-
-        .feed-item {
-            background: rgba(0, 50, 100, 0.5);
-            border-left: 3px solid #ff0000;
-            padding: 8px;
-            margin: 5px 0;
-            font-size: 12px;
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(-20px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        .feed-item .ip {
-            color: #ff6666;
-            font-weight: bold;
-        }
-
-        .feed-item .location {
-            color: #ffaa00;
-        }
-
-        .feed-item .count {
-            color: #00ff00;
         }
 
         /* History Controls (Bottom Right) */
@@ -605,21 +555,6 @@
         </div>
     </div>
 
-    <!-- Attack Feed Panel (Bottom Left) -->
-    <div class="hud-panel" id="feed-panel">
-        <h2>
-            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/>
-                <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            Recent Attack Feed
-        </h2>
-        <div id="attack-feed">
-            <p class="loading">Waiting for data...</p>
-        </div>
-    </div>
-
     <!-- History Controls (Bottom Right) -->
     <div class="hud-panel" id="history-panel">
         <h2>
@@ -801,7 +736,6 @@
             clearMarkers();
             updateLeaderboard();
             updateUsernameLeaderboard();
-            updateFeed();
             plotMarkers();
             updateLastUpdateTime();
         }
@@ -1075,42 +1009,6 @@
         }
 
         // ========================================
-        // UPDATE ATTACK FEED
-        // ========================================
-        function updateFeed() {
-            const feedContainer = document.getElementById('attack-feed');
-            feedContainer.innerHTML = '';
-
-            // Get last 5 attacks (sorted by failure count)
-            const topAttacks = [...attackData]
-                .sort((a, b) => toCount(b.attack_count ?? b.FailureCount) - toCount(a.attack_count ?? a.FailureCount))
-                .slice(0, 5);
-
-            if (topAttacks.length === 0) {
-                feedContainer.innerHTML = '<p class="loading">No attacks detected</p>';
-                return;
-            }
-
-            topAttacks.forEach(attack => {
-                const feedItem = document.createElement('div');
-                feedItem.className = 'feed-item';
-                const ip = attack.ip || attack.IpAddress || 'Unknown';
-                const city = attack.city || attack.City || 'Unknown';
-                const country = attack.country || attack.Country || 'Unknown';
-                const count = toCount(attack.attack_count ?? attack.FailureCount);
-                const timestamp = attack.last_seen || attack.timestamp;
-                
-                feedItem.innerHTML = `
-                    <span class="ip">${ip}</span> | 
-                    <span class="location">${city}, ${country}</span><br>
-                    <span class="count">Attempts: ${count.toLocaleString()}</span> | 
-                    ${formatTimestamp(timestamp)}
-                `;
-                feedContainer.appendChild(feedItem);
-            });
-        }
-
-        // ========================================
         // CLEAR MARKERS
         // ========================================
         function clearMarkers() {
@@ -1125,7 +1023,6 @@
             clearMarkers();
             document.getElementById('leaderboard-container').innerHTML = '<p class="loading">No data available</p>';
             document.getElementById('username-container').innerHTML = '<p class="loading">No data available</p>';
-            document.getElementById('attack-feed').innerHTML = '<p class="loading">No data available</p>';
         }
 
         // ========================================
