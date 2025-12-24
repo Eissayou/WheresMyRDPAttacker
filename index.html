@@ -1167,14 +1167,18 @@
         function updateLastUpdateTime() {
             const now = new Date();
             // Display in Pacific Time
-            const timeStr = now.toLocaleTimeString('en-US', { 
+            const timeStr = now.toLocaleTimeString('en-US', {
                 timeZone: 'America/Los_Angeles',
-                hour: '2-digit', 
-                minute: '2-digit', 
+                hour: '2-digit',
+                minute: '2-digit',
                 second: '2-digit',
                 hour12: false
             });
-            document.getElementById('last-update').textContent = timeStr + ' PT';
+
+            // Update ALL last-update elements (desktop + mobile)
+            document.querySelectorAll('#last-update').forEach(element => {
+                element.textContent = timeStr + ' PT';
+            });
         }
 
         // ========================================
@@ -1182,29 +1186,37 @@
         // ========================================
         function switchToLiveMode() {
             isLiveMode = true;
-            document.getElementById('mode-indicator').textContent = 'LIVE';
-            document.getElementById('mode-indicator').className = 'mode-indicator live';
-            
+
+            // Update ALL mode indicators (desktop + mobile)
+            document.querySelectorAll('#mode-indicator').forEach(indicator => {
+                indicator.textContent = 'LIVE';
+                indicator.className = 'mode-indicator live';
+            });
+
             // Set date picker to today
             const today = getTodayDate();
             document.querySelectorAll('#date-picker').forEach(picker => {
                 picker.value = today;
             });
-            
+
             fetchAttackData();
             startAutoRefresh();
         }
 
         function switchToHistoryMode(date) {
             isLiveMode = false;
-            document.getElementById('mode-indicator').textContent = 'HISTORY';
-            document.getElementById('mode-indicator').className = 'mode-indicator history';
-            
+
+            // Update ALL mode indicators (desktop + mobile)
+            document.querySelectorAll('#mode-indicator').forEach(indicator => {
+                indicator.textContent = 'HISTORY';
+                indicator.className = 'mode-indicator history';
+            });
+
             // Set date picker to selected date
             document.querySelectorAll('#date-picker').forEach(picker => {
                 picker.value = date;
             });
-            
+
             stopAutoRefresh();
             fetchAttackData(date);
         }
@@ -1266,20 +1278,20 @@
         function startAutoRefreshCountdown() {
             stopAutoRefreshCountdown();
 
-            const countdownEl = document.getElementById('auto-refresh-countdown');
-            if (!countdownEl) return;
-
             const render = () => {
-                if (!isLiveMode) {
-                    countdownEl.textContent = 'PAUSED';
-                    return;
-                }
+                // Update ALL countdown elements (desktop + mobile)
+                document.querySelectorAll('#auto-refresh-countdown').forEach(countdownEl => {
+                    if (!isLiveMode) {
+                        countdownEl.textContent = 'PAUSED';
+                        return;
+                    }
 
-                const remainingMs = Math.max(0, (nextAutoRefreshAt || Date.now()) - Date.now());
-                const remainingSec = Math.ceil(remainingMs / 1000);
-                const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
-                const ss = String(remainingSec % 60).padStart(2, '0');
-                countdownEl.textContent = `${mm}:${ss}`;
+                    const remainingMs = Math.max(0, (nextAutoRefreshAt || Date.now()) - Date.now());
+                    const remainingSec = Math.ceil(remainingMs / 1000);
+                    const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+                    const ss = String(remainingSec % 60).padStart(2, '0');
+                    countdownEl.textContent = `${mm}:${ss}`;
+                });
             };
 
             render();
