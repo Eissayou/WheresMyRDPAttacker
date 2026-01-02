@@ -1,31 +1,16 @@
-# =====================================================
-# PHASE 6: LOGIC APP (DATA PARSER)
-# =====================================================
-# This Logic App is the "glue" that:
-# 1. Runs on a schedule (every 30 minutes)
-# 2. Queries Log Analytics for failed RDP attempts
-# 3. Parses the results
-# 4. Writes the results as JSON to blob storage
-# 5. The frontend reads this JSON to display the map
-
-# =====================================================
-# DATA: CURRENT SUBSCRIPTION
-# =====================================================
+# Logic App - Data Parser
+#
+# Pipeline:
+#   Timer (30 min) → KQL Query → Parse JSON → Write to Blob Storage
+#
+# NOTE: Azure Monitor Logs API connection requires manual OAuth authorization
+#       after deployment. Navigate to: Portal → API Connections → Authorize
 
 data "azurerm_subscription" "current" {}
 
-# =====================================================
-# LOCAL VALUES FOR WORKFLOW DEFINITION
-# =====================================================
-# We use locals to build the workflow JSON with dynamic values
-
 locals {
-  # KQL query to get failed RDP attempts with geo data
   kql_query = <<-EOT
-// PST (UTC-8). Note: this is not DST-aware (PDT would be UTC-7).
 let timeOffset = 8h;
-
-// Start-of-day in PST, converted back to UTC for filtering TimeGenerated
 let lookbackTimeUtc = startofday(now() - timeOffset) + timeOffset;
 
 SecurityEvent
@@ -67,20 +52,7 @@ SecurityEvent
 EOT
 }
 
-# =====================================================
-# API CONNECTION: AZURE MONITOR LOGS
-# =====================================================
-# IMPORTANT: This connector requires MANUAL AUTHORIZATION!
-#
-# After terraform apply, you must:
-# 1. Go to Azure Portal → API Connections → "azuremonitorlogs"
-# 2. Click "Edit API connection"
-# 3. Click "Authorize" and sign in with your Azure account
-# 4. Click "Save"
-#
-# This is a limitation of the Azure Monitor Logs connector - it does
-# not support access key or managed identity authentication through
-# Terraform. This is a one-time manual step.
+# API Connections
 
 resource "azurerm_api_connection" "azuremonitorlogs" {
   name                = "azuremonitorlogs"
@@ -90,11 +62,6 @@ resource "azurerm_api_connection" "azuremonitorlogs" {
 
   tags = var.tags
 }
-
-
-# =====================================================
-# API CONNECTION: AZURE BLOB STORAGE
-# =====================================================
 
 resource "azurerm_api_connection" "azureblob" {
   name                = "azureblob"
@@ -110,9 +77,7 @@ resource "azurerm_api_connection" "azureblob" {
   tags = var.tags
 }
 
-# =====================================================
-# LOGIC APP WORKFLOW
-# =====================================================
+# Logic App Workflow
 
 resource "azurerm_logic_app_workflow" "data_parser" {
   name                = "DataParser"
@@ -123,7 +88,6 @@ resource "azurerm_logic_app_workflow" "data_parser" {
     type = "SystemAssigned"
   }
 
-  # Connection parameters - tells the workflow which connections to use
   workflow_parameters = {
     "$connections" = jsonencode({
       defaultValue = {}
@@ -131,7 +95,6 @@ resource "azurerm_logic_app_workflow" "data_parser" {
     })
   }
 
-  # The parameters that will be passed at runtime
   parameters = {
     "$connections" = jsonencode({
       azuremonitorlogs = {
@@ -150,10 +113,7 @@ resource "azurerm_logic_app_workflow" "data_parser" {
   tags = var.tags
 }
 
-# =====================================================
-# LOGIC APP TRIGGER: RECURRENCE
-# =====================================================
-# Runs every 30 minutes
+# Workflow Trigger & Actions
 
 resource "azurerm_logic_app_trigger_recurrence" "every_30_min" {
   name         = "Recurrence"
@@ -162,11 +122,6 @@ resource "azurerm_logic_app_trigger_recurrence" "every_30_min" {
   interval     = 30
   time_zone    = "Pacific Standard Time"
 }
-
-# =====================================================
-# LOGIC APP ACTION: RUN QUERY
-# =====================================================
-# Queries Log Analytics for failed RDP attempts
 
 resource "azurerm_logic_app_action_custom" "run_query" {
   name         = "Run_query_and_list_results"
@@ -195,11 +150,6 @@ resource "azurerm_logic_app_action_custom" "run_query" {
 
   depends_on = [azurerm_logic_app_trigger_recurrence.every_30_min]
 }
-
-# =====================================================
-# LOGIC APP ACTION: PARSE JSON
-# =====================================================
-# Parses the query results into structured objects
 
 resource "azurerm_logic_app_action_custom" "parse_json" {
   name         = "Parse_JSON"
@@ -242,11 +192,6 @@ resource "azurerm_logic_app_action_custom" "parse_json" {
   depends_on = [azurerm_logic_app_action_custom.run_query]
 }
 
-# =====================================================
-# LOGIC APP ACTION: CREATE BLOB
-# =====================================================
-# Writes the parsed data to blob storage
-
 resource "azurerm_logic_app_action_custom" "create_blob" {
   name         = "Create_blob_V2"
   logic_app_id = azurerm_logic_app_workflow.data_parser.id
@@ -284,19 +229,13 @@ resource "azurerm_logic_app_action_custom" "create_blob" {
   depends_on = [azurerm_logic_app_action_custom.parse_json]
 }
 
-# =====================================================
-# ROLE ASSIGNMENT: LOG ANALYTICS READER
-# =====================================================
+# RBAC Role Assignments
 
 resource "azurerm_role_assignment" "logic_app_log_reader" {
   scope                = azurerm_log_analytics_workspace.logs.id
   role_definition_name = "Log Analytics Reader"
   principal_id         = azurerm_logic_app_workflow.data_parser.identity[0].principal_id
 }
-
-# =====================================================
-# ROLE ASSIGNMENT: STORAGE BLOB DATA CONTRIBUTOR
-# =====================================================
 
 resource "azurerm_role_assignment" "logic_app_blob_contributor" {
   scope                = azurerm_storage_account.storage.id
