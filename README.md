@@ -10,7 +10,7 @@ Real-time visualization of RDP brute-force attacks against a Windows honeypot de
 
 This project deploys a Windows VM as a honeypot with RDP exposed to the internet. Failed login attempts are captured via Windows Security Events, processed through Azure Logic Apps, and visualized on an interactive map.
 
-**Live Demo**: [wheresmyrdpattacker.azurestaticapps.net](https://wheresmyrdpattacker.azurestaticapps.net)
+**Live Demo**: [orange-wave-0061ed81e.6.azurestaticapps.net](https://orange-wave-0061ed81e.6.azurestaticapps.net/)
 
 ## Architecture
 
