@@ -113,3 +113,14 @@ output "static_web_app_api_key" {
   value       = azurerm_static_web_app.frontend.api_key
   sensitive   = true
 }
+
+# Function App
+output "function_app_name" {
+  description = "Function App name (use with: func azure functionapp publish <name> --build remote)"
+  value       = azurerm_linux_function_app.analysis.name
+}
+
+output "function_app_url" {
+  description = "Function App URL for AI analysis"
+  value       = "https://${azurerm_linux_function_app.analysis.default_hostname}/api/compare"
+}

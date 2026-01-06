@@ -14,3 +14,12 @@ terraform/*_override.tf.json
 
 # Personal notes
 TERRAFORM_LEARNING_PLAN.md
+
+# Azure Functions
+functions/local.settings.json
+functions/.python_packages/
+functions/__pycache__/
+functions/.venv/
+
+# Editor
+.vscode/

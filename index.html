@@ -1,19 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Azure Honeypot Threat Map - SOC Dashboard</title>
-    
+
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
-          crossorigin=""/>
-    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
     <!-- Leaflet MarkerCluster CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    
+
     <style>
         /* SVG Icons */
         .icon {
@@ -93,8 +93,13 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
         /* Mobile Responsive */
@@ -161,7 +166,8 @@
 
         /* Leaderboard Panel (Top Left) */
         #stats-panel {
-            top: 90px;  /* Moved down to avoid zoom controls */
+            top: 90px;
+            /* Moved down to avoid zoom controls */
             left: 20px;
             width: 340px;
         }
@@ -330,8 +336,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         /* Error Message */
@@ -450,8 +463,17 @@
         }
 
         @keyframes blink {
-            0%, 50%, 100% { opacity: 1; }
-            25%, 75% { opacity: 0.5; }
+
+            0%,
+            50%,
+            100% {
+                opacity: 1;
+            }
+
+            25%,
+            75% {
+                opacity: 0.5;
+            }
         }
 
         /* Scrollbar Styling */
@@ -490,10 +512,12 @@
                 opacity: 0;
                 filter: drop-shadow(0 0 0px currentColor);
             }
+
             50% {
                 opacity: 0.8;
                 filter: drop-shadow(0 0 20px currentColor);
             }
+
             100% {
                 opacity: 1;
                 filter: drop-shadow(0 0 8px currentColor);
@@ -512,6 +536,7 @@
         .marker-cluster-small {
             background-color: rgba(0, 255, 0, 0.6);
         }
+
         .marker-cluster-small div {
             background-color: rgba(0, 255, 0, 0.8);
         }
@@ -519,6 +544,7 @@
         .marker-cluster-medium {
             background-color: rgba(255, 170, 0, 0.6);
         }
+
         .marker-cluster-medium div {
             background-color: rgba(255, 170, 0, 0.8);
         }
@@ -526,6 +552,7 @@
         .marker-cluster-large {
             background-color: rgba(255, 0, 0, 0.6);
         }
+
         .marker-cluster-large div {
             background-color: rgba(255, 0, 0, 0.8);
         }
@@ -547,8 +574,261 @@
             color: #000;
             line-height: 30px;
         }
+
+        /* AI Analysis Panel (Bottom Left) */
+        #ai-panel {
+            bottom: 20px;
+            left: 20px;
+            width: 380px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .ai-date-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 10px 0;
+        }
+
+        .ai-date-row input[type="date"] {
+            flex: 1;
+            padding: 8px;
+            background: rgba(0, 50, 100, 0.8);
+            border: 1px solid #00ffff;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .ai-date-row input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+        }
+
+        .ai-date-row span {
+            color: #00ffff;
+            font-weight: bold;
+        }
+
+        #ai-compare-btn {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #ai-compare-btn:hover {
+            background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+        }
+
+        #ai-compare-btn:disabled {
+            background: #444;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* AI Modal */
+        #ai-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #ai-modal-content {
+            background: rgba(0, 20, 40, 0.95);
+            border: 2px solid #6366f1;
+            border-radius: 8px;
+            padding: 25px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+            display: flex;
+            flex-direction: column;
+        }
+
+        #ai-modal h3 {
+            color: #a78bfa;
+            margin-bottom: 20px;
+            font-size: 20px;
+            border-bottom: 2px solid #6366f1;
+            padding-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ai-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: flex-end;
+            /* Align inputs and VS text */
+            justify-content: center;
+            margin-bottom: 20px;
+            background: rgba(0, 50, 100, 0.3);
+            padding: 20px;
+            border-radius: 6px;
+        }
+
+        .ai-date-group {
+            flex: 1;
+            min-width: 140px;
+            /* Ensure inputs don't get too small */
+        }
+
+        .ai-controls input[type="date"] {
+            padding: 10px;
+            background: rgba(0, 50, 100, 0.8);
+            border: 1px solid #6366f1;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        .ai-vs {
+            color: #6366f1;
+            font-weight: bold;
+            font-size: 18px;
+            padding-bottom: 8px;
+            /* Visual alignment with inputs */
+        }
+
+        #ai-compare-btn {
+            width: 100%;
+            /* Force button to new line/full width */
+            flex-basis: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #ai-results-area {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 20px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #e0e0e0;
+        }
+
+        #ai-results-area h1,
+        #ai-results-area h2,
+        #ai-results-area h3 {
+            color: #a78bfa;
+            margin: 15px 0 10px;
+        }
+
+        #ai-results-area ul {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+
+        #ai-results-area li {
+            margin-bottom: 5px;
+        }
+
+        #ai-results-area strong {
+            color: #00ffff;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid #666;
+            color: #ccc;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: 'Courier New', monospace;
+        }
+
+        .btn-secondary:hover {
+            border-color: #fff;
+            color: #fff;
+        }
+
+
+
+        .ai-loading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #a78bfa;
+        }
+
+        .ai-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #6366f1;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .ai-error {
+            color: #ff6666;
+            padding: 10px;
+            background: rgba(255, 0, 0, 0.1);
+            border-radius: 4px;
+        }
     </style>
 </head>
+
 <body>
     <!-- Main Map -->
     <div id="map"></div>
@@ -556,10 +836,10 @@
     <!-- Mobile Toggle Button -->
     <button id="mobile-toggle" type="button" aria-label="Toggle Dashboard">
         <svg viewBox="0 0 24 24">
-            <rect x="3" y="3" width="7" height="7" rx="1"/>
-            <rect x="14" y="3" width="7" height="7" rx="1"/>
-            <rect x="3" y="14" width="7" height="7" rx="1"/>
-            <rect x="14" y="14" width="7" height="7" rx="1"/>
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
         </svg>
     </button>
 
@@ -570,10 +850,10 @@
     <div class="hud-panel" id="stats-panel">
         <h2>
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 3v18h18"/>
-                <path d="M18 17V9"/>
-                <path d="M13 17V5"/>
-                <path d="M8 17v-3"/>
+                <path d="M3 3v18h18" />
+                <path d="M18 17V9" />
+                <path d="M13 17V5" />
+                <path d="M8 17v-3" />
             </svg>
             Top Attacking Countries
             <span class="mode-indicator live" id="mode-indicator">LIVE</span>
@@ -583,15 +863,15 @@
         </div>
         <div class="auto-refresh" id="auto-refresh-row">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 12a9 9 0 1 1-3-6.7"/>
-                <path d="M21 3v7h-7"/>
+                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                <path d="M21 3v7h-7" />
             </svg>
             Next auto-refresh in <strong id="auto-refresh-countdown">--:--</strong>
         </div>
         <div class="update-time">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 6v6l4 2"/>
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
             </svg>
             Last Updated: <span class="update-time-value" id="last-update">--:--:--</span>
         </div>
@@ -601,9 +881,9 @@
     <div class="hud-panel" id="target-panel">
         <h2>
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <circle cx="12" cy="12" r="6"/>
-                <circle cx="12" cy="12" r="2"/>
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
             </svg>
             Target Information
         </h2>
@@ -618,9 +898,9 @@
     <div class="hud-panel" id="username-panel">
         <h2>
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/>
-                <path d="M12 14c-4 0-8 2-8 6v2h16v-2c0-4-4-6-8-6z"/>
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" />
+                <path d="M12 14c-4 0-8 2-8 6v2h16v-2c0-4-4-6-8-6z" />
             </svg>
             Top Usernames Tried
         </h2>
@@ -633,10 +913,10 @@
     <div class="hud-panel" id="history-panel">
         <h2>
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
             Historical Data
         </h2>
@@ -644,12 +924,84 @@
         <input type="date" id="date-picker" max="">
     </div>
 
+    <!-- AI Analysis Panel (Bottom Left - Minimized) -->
+    <div class="hud-panel" id="ai-panel">
+        <h2>
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z" />
+                <path d="M16 14v2a4 4 0 0 1-8 0v-2" />
+                <circle cx="12" cy="18" r="2" />
+                <path d="M9 22h6" />
+                <path d="M12 2v-1" />
+                <path d="M4 6h1" />
+                <path d="M19 6h1" />
+            </svg>
+            AI Trend Analysis
+        </h2>
+        <p style="color: #ccc; font-size: 12px; margin-bottom: 10px;">
+            Analyze attack patterns and generate insights using Gemini AI.
+        </p>
+        <button id="ai-panel-open-btn"
+            style="width: 100%; padding: 10px; background: rgba(99, 102, 241, 0.2); border: 1px solid #6366f1; color: #a78bfa; border-radius: 4px; cursor: pointer; font-family: 'Courier New'; font-weight: bold; transition: all 0.3s;">
+            Open Analysis Tool
+        </button>
+    </div>
+
+    <!-- AI Analysis Modal (Full) -->
+    <div id="ai-modal">
+        <div id="ai-modal-content">
+            <h3>
+                <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z" />
+                    <path d="M16 14v2a4 4 0 0 1-8 0v-2" />
+                    <circle cx="12" cy="18" r="2" />
+                    <path d="M9 22h6" />
+                </svg>
+                AI Attack Pattern Analysis
+            </h3>
+
+            <div class="ai-controls">
+                <div class="ai-date-group">
+                    <label style="display: block; margin-bottom: 5px; color: #888; font-size: 12px;">Baseline
+                        Date</label>
+                    <input type="date" id="ai-date1">
+                </div>
+                <div class="ai-vs">VS</div>
+                <div class="ai-date-group">
+                    <label style="display: block; margin-bottom: 5px; color: #888; font-size: 12px;">Comparison
+                        Date</label>
+                    <input type="date" id="ai-date2">
+                </div>
+                <button id="ai-compare-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    Analyze
+                </button>
+            </div>
+
+            <div id="ai-results-area">
+                <div
+                    style="display: flex; height: 100%; align-items: center; justify-content: center; color: #666; font-style: italic;">
+                    Select dates and click Analyze to generate insights.
+                </div>
+            </div>
+
+            <div class="modal-buttons">
+                <button class="btn-secondary" id="ai-modal-close">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Error Message -->
     <div id="error-message">
-        <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: block; margin: 0 auto 10px;">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            style="display: block; margin: 0 auto 10px;">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
         <h3>No Data Available</h3>
         <p id="error-text"></p>
@@ -665,10 +1017,9 @@
     </div>
 
     <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
-            crossorigin=""></script>
-    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
     <!-- Leaflet MarkerCluster JS -->
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
@@ -680,7 +1031,7 @@
         const STORAGE_ACCOUNT = 'honeypotpublicdata'; // e.g., 'myhoneypotdata'
         const BLOB_CONTAINER = 'public-data';
         const BLOB_BASE_URL = `https://${STORAGE_ACCOUNT}.blob.core.windows.net/${BLOB_CONTAINER}`;
-        
+
         const AUTO_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes (matches Logic App)
         const AUTO_REFRESH_BUFFER_MS = 2 * 60 * 1000; // UI buffer to allow blob/pipeline delay
 
@@ -745,7 +1096,7 @@
                 },
                 animate: true,                   // Smooth animations
                 animateAddingMarkers: false,     // Disable to avoid errors with circle markers
-                iconCreateFunction: function(cluster) {
+                iconCreateFunction: function (cluster) {
                     const childCount = cluster.getChildCount();
                     let c = ' marker-cluster-';
                     if (childCount < 10) {
@@ -778,7 +1129,7 @@
 
             try {
                 const response = await fetch(url);
-                
+
                 if (!response.ok) {
                     if (response.status === 404) {
                         throw new Error(`No attack data found for ${targetDate}`);
@@ -787,7 +1138,7 @@
                 }
 
                 const data = await response.json();
-                
+
                 if (!Array.isArray(data) || data.length === 0) {
                     throw new Error(`No attacks recorded for ${targetDate}`);
                 }
@@ -795,7 +1146,7 @@
                 attackData = data;
                 updateDashboard();
                 hideError();
-                
+
             } catch (error) {
                 console.error('Fetch error:', error);
                 showError(error.message);
@@ -863,7 +1214,7 @@
                 const country = attack.country || attack.Country || 'Unknown';
                 const firstSeen = attack.first_seen ? formatTimestamp(attack.first_seen) : 'N/A';
                 const lastSeen = attack.last_seen || attack.timestamp;
-                
+
                 // Parse target_accounts (may be JSON string from KQL)
                 let accounts = attack.target_accounts;
                 if (typeof accounts === 'string') {
@@ -873,7 +1224,7 @@
                         accounts = [];
                     }
                 }
-                const accountsDisplay = (accounts && Array.isArray(accounts)) 
+                const accountsDisplay = (accounts && Array.isArray(accounts))
                     ? accounts.slice(0, 5).map(a => {
                         const parts = a.split('\\');
                         return parts[parts.length - 1];
@@ -904,7 +1255,7 @@
         function updateLeaderboard() {
             // Update ALL leaderboard containers (desktop + mobile clone)
             const leaderboardContainers = document.querySelectorAll('#leaderboard-container');
-            
+
             // Aggregate attacks by country
             const countryCount = {};
             attackData.forEach(attack => {
@@ -929,13 +1280,13 @@
 
             leaderboardContainers.forEach(leaderboardContainer => {
                 leaderboardContainer.innerHTML = '';
-                
+
                 topCountries.forEach(([country, count], index) => {
                     const item = document.createElement('div');
                     item.className = 'leaderboard-item';
-                    
+
                     const barWidth = (count / maxCount) * 100;
-                    
+
                     item.innerHTML = `
                         <span class="leaderboard-rank">#${index + 1}</span>
                         <div class="leaderboard-country">
@@ -944,7 +1295,7 @@
                         </div>
                         <span class="leaderboard-count">${count.toLocaleString()}</span>
                     `;
-                    
+
                     leaderboardContainer.appendChild(item);
                 });
             });
@@ -960,11 +1311,11 @@
             // Count how many unique IPs tried each username
             // This is the clearest metric: "Which usernames are attackers targeting?"
             const usernameIPs = {}; // username -> Set of IPs
-            
+
             attackData.forEach(attack => {
                 const ip = attack.ip || attack.IpAddress || 'unknown';
                 let accounts = attack.target_accounts;
-                
+
                 // Handle both string (from KQL make_set) and array formats
                 if (typeof accounts === 'string') {
                     try {
@@ -973,7 +1324,7 @@
                         accounts = [];
                     }
                 }
-                
+
                 if (accounts && Array.isArray(accounts)) {
                     // Get unique cleaned usernames for this IP
                     const seenUsernames = new Set();
@@ -1008,7 +1359,7 @@
 
             usernameContainers.forEach(usernameContainer => {
                 usernameContainer.innerHTML = '';
-                
+
                 topUsernames.forEach(([username, ipCount]) => {
                     const item = document.createElement('div');
                     item.className = 'username-item';
@@ -1016,10 +1367,10 @@
                         <span class="username-name">${username}</span>
                         <span class="username-count">${ipCount} IPs</span>
                     `;
-                    
+
                     // Make it clickable to show IPs that tried this username
                     item.addEventListener('click', () => showUsernameDetail(username));
-                    
+
                     usernameContainer.appendChild(item);
                 });
             });
@@ -1032,7 +1383,7 @@
             const modal = document.getElementById('username-modal');
             const title = document.getElementById('username-modal-title');
             const list = document.getElementById('username-modal-list');
-            
+
             title.textContent = `IPs that tried "${username}"`;
             list.innerHTML = '';
 
@@ -1040,7 +1391,7 @@
             const matchingAttacks = [];
             attackData.forEach(attack => {
                 let accounts = attack.target_accounts;
-                
+
                 if (typeof accounts === 'string') {
                     try {
                         accounts = JSON.parse(accounts);
@@ -1048,7 +1399,7 @@
                         accounts = [];
                     }
                 }
-                
+
                 if (accounts && Array.isArray(accounts) && accounts.length > 0) {
                     const hasUsername = accounts.some(acc => {
                         // Handle both single and double backslashes, and clean whitespace
@@ -1056,7 +1407,7 @@
                         const cleanName = parts[parts.length - 1].toUpperCase().trim();
                         return cleanName === username;
                     });
-                    
+
                     if (hasUsername) {
                         matchingAttacks.push(attack);
                     }
@@ -1078,7 +1429,7 @@
                     const city = attack.city || attack.City || 'Unknown';
                     const country = attack.country || attack.Country || 'Unknown';
                     const count = toCount(attack.attack_count ?? attack.FailureCount);
-                    
+
                     const item = document.createElement('div');
                     item.className = 'username-detail-item';
                     item.innerHTML = `
@@ -1125,7 +1476,7 @@
         function showError(message) {
             document.getElementById('error-text').textContent = message;
             document.getElementById('error-message').style.display = 'block';
-            
+
             // Auto-hide after 5 seconds
             setTimeout(() => {
                 hideError();
@@ -1153,11 +1504,11 @@
             if (!timestamp) return 'N/A';
             const date = new Date(timestamp);
             // Convert to Pacific Time
-            return date.toLocaleString('en-US', { 
+            return date.toLocaleString('en-US', {
                 timeZone: 'America/Los_Angeles',
                 month: 'short',
                 day: 'numeric',
-                hour: '2-digit', 
+                hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit',
                 hour12: false
@@ -1229,10 +1580,10 @@
             // Calculate next :00 or :30 mark in Pacific Time
             const now = new Date();
             const pacificTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-            
+
             const currentMinute = pacificTime.getMinutes();
             const currentSecond = pacificTime.getSeconds();
-            
+
             let minutesUntilNext;
             if (currentMinute < 30) {
                 // Next refresh at :30
@@ -1241,10 +1592,10 @@
                 // Next refresh at next hour :00
                 minutesUntilNext = 60 - currentMinute;
             }
-            
+
             // Subtract current seconds to get exact time
             const secondsUntilNext = (minutesUntilNext * 60) - currentSecond;
-            
+
             return Date.now() + (secondsUntilNext * 1000);
         }
 
@@ -1317,14 +1668,34 @@
                 // Clone panels to mobile wrapper
                 panels.forEach(panel => {
                     const clone = panel.cloneNode(true);
-                    wrapper.appendChild(clone);
-                });
 
-                // Attach event listener to mobile date picker
-                const mobileDatePicker = wrapper.querySelector('#date-picker');
-                if (mobileDatePicker) {
-                    mobileDatePicker.addEventListener('change', handleDateChange);
-                }
+                    // Fix IDs in clone to avoid duplicates (optional but good practice)
+                    // For now, we just rely on class selectors contextually
+
+                    wrapper.appendChild(clone);
+
+                    // Re-attach specific listeners for mobile clones
+
+                    // 1. Mobile Date Picker
+                    if (panel.id === 'history-panel') {
+                        const mobileDatePicker = clone.querySelector('#date-picker');
+                        if (mobileDatePicker) {
+                            mobileDatePicker.addEventListener('change', handleDateChange);
+                        }
+                    }
+
+                    // 2. Mobile AI Open Button
+                    if (panel.id === 'ai-panel') {
+                        const mobileAiOpenBtn = clone.querySelector('#ai-panel-open-btn');
+                        if (mobileAiOpenBtn) {
+                            mobileAiOpenBtn.addEventListener('click', () => {
+                                // Close mobile menu first? Optional.
+                                // wrapper.classList.remove('visible'); 
+                                document.getElementById('ai-modal').style.display = 'flex';
+                            });
+                        }
+                    }
+                });
 
                 // Toggle visibility
                 toggle.addEventListener('click', () => {
@@ -1356,6 +1727,128 @@
         }
 
         // ========================================
+        // AI COMPARISON
+        // ========================================
+        // ⚠️ REPLACE WITH YOUR AZURE FUNCTION URL AFTER DEPLOYMENT
+        const AI_FUNCTION_URL = 'https://aianalysis-hmhudebecwhebrhv.westus2-01.azurewebsites.net/api/compare';
+
+        async function fetchDataForDate(date) {
+            const fileName = `attacks_${date}.json`;
+            const url = `${BLOB_BASE_URL}/${fileName}?v=${Date.now()}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`No data for ${date}`);
+            }
+            return response.json();
+        }
+
+        async function compareWithAI() {
+            const date1 = document.getElementById('ai-date1').value;
+            const date2 = document.getElementById('ai-date2').value;
+            const btn = document.getElementById('ai-compare-btn');
+            const resultsArea = document.getElementById('ai-results-area');
+
+            if (!date1 || !date2) {
+                alert('Please select both dates');
+                return;
+            }
+
+            if (date1 === date2) {
+                alert('Please select two different dates');
+                return;
+            }
+
+            // Show loading state
+            btn.disabled = true;
+            btn.innerHTML = '<div class="ai-spinner"></div>';
+            resultsArea.innerHTML = `
+                <div class="ai-loading" style="justify-content: center; height: 100%; flex-direction: column;">
+                    <div class="ai-spinner" style="width: 40px; height: 40px; border-width: 4px; margin-bottom: 15px;"></div>
+                    <div style="color: #a78bfa; font-size: 16px;">Analyzing attack telemetry...</div>
+                </div>
+            `;
+
+            try {
+                // Fetch data for both dates
+                const [data1, data2] = await Promise.all([
+                    fetchDataForDate(date1),
+                    fetchDataForDate(date2)
+                ]);
+
+                // Call Azure Function
+                const response = await fetch(AI_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date1, date2, data1, data2 })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Analysis failed');
+                }
+
+                const result = await response.json();
+
+                // Helper to safely display any value (handles objects/arrays)
+                const safeDisplay = (val, fallback = 'No data.') => {
+                    if (!val) return fallback;
+                    if (typeof val === 'string') return val;
+                    if (typeof val === 'object') return JSON.stringify(val, null, 2);
+                    return String(val);
+                };
+
+                // Format structured JSON output
+                let html = `
+                    <div style="margin-bottom: 20px; padding: 15px; background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; border-radius: 4px;">
+                        <h4 style="margin: 0 0 5px 0; color: #a78bfa; text-transform: uppercase; font-size: 12px;">Executive Summary</h4>
+                        <p style="margin: 0; color: #fff; font-size: 15px; font-weight: 500;">${safeDisplay(result.summary, 'Analysis complete.')}</p>
+                    </div>
+
+                    <div style="display: grid; gap: 20px;">
+                        <div>
+                            <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Attack Volume</h4>
+                            <p>${safeDisplay(result.attack_volume, 'No significant changes.')}</p>
+                        </div>
+
+                        <div>
+                            <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Geographic Shifts</h4>
+                            <p>${safeDisplay(result.geographic_shifts, 'No significant changes.')}</p>
+                        </div>
+
+                        <div>
+                            <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Notable IPs</h4>
+                            <p>${safeDisplay(result.notable_ips, 'None detected.')}</p>
+                        </div>
+
+                        <div>
+                            <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Target Behavior</h4>
+                            <p>${safeDisplay(result.target_behavior, 'No significant changes.')}</p>
+                        </div>
+                    </div>
+                `;
+
+                resultsArea.innerHTML = html;
+
+            } catch (error) {
+                resultsArea.innerHTML = `
+                    <div class="ai-error" style="text-align: center; margin-top: 50px;">
+                        <strong>Analysis Failed</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Analyze`;
+            }
+        }
+
+        // ========================================
         // EVENT LISTENERS
         // ========================================
         // Close username modal
@@ -1368,6 +1861,23 @@
 
         document.getElementById('date-picker').addEventListener('change', handleDateChange);
 
+        // AI Modal Controls
+        const aiModal = document.getElementById('ai-modal');
+
+        document.getElementById('ai-panel-open-btn').addEventListener('click', () => {
+            aiModal.style.display = 'flex';
+        });
+
+        document.getElementById('ai-modal-close').addEventListener('click', () => {
+            aiModal.style.display = 'none';
+        });
+
+        aiModal.addEventListener('click', (e) => {
+            if (e.target === aiModal) aiModal.style.display = 'none';
+        });
+
+        document.getElementById('ai-compare-btn').addEventListener('click', compareWithAI);
+
         // ========================================
         // INITIALIZATION
         // ========================================
@@ -1378,13 +1888,26 @@
                 picker.max = today;
                 picker.value = today; // Set initial value to today
             });
-            
+
+            // Initialize AI date pickers
+            const aiDate1 = document.getElementById('ai-date1');
+            const aiDate2 = document.getElementById('ai-date2');
+            if (aiDate1 && aiDate2) {
+                aiDate1.max = today;
+                aiDate2.max = today;
+                // Set default dates (yesterday and today)
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                aiDate1.value = yesterday.toISOString().split('T')[0];
+                aiDate2.value = today;
+            }
+
             // Setup mobile toggle
             setupMobileToggle();
-            
+
             // Initialize map
             initMap();
-            
+
             // Start in live mode
             switchToLiveMode();
         });
@@ -1395,4 +1918,5 @@
         });
     </script>
 </body>
+
 </html>

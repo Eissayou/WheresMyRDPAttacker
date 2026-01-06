@@ -89,3 +89,10 @@ variable "admin_password" {
   type        = string
   sensitive   = true
 }
+
+variable "gemini_api_key" {
+  description = "Gemini API key for LLM attack analysis"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
