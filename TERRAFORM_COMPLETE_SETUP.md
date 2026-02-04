@@ -1,6 +1,5 @@
-# Terraform Learning Plan: Azure Honeypot Infrastructure
+# Terraform Complete Setup: Azure Honeypot Infrastructure
 
-A step-by-step guide to recreating your Azure Honeypot Threat Map infrastructure using Terraform.
 
 **Last Updated**: January 2026
 
@@ -78,7 +77,7 @@ az login
 az account show --query "{Name:name, ID:id}" -o table
 ```
 
-### 3. Your Subscription ID
+### 3. Subscription ID
 ```
 Subscription ID: 6c0c4590-ae27-41ad-9e99-24a262cf04ee
 ```
@@ -101,7 +100,7 @@ WheresMyRDPAttacker/
 │   ├── vm.tf                   # VM + Extensions + DCR (Phase 5)
 │   ├── logic_app.tf            # Logic App + Connections (Phase 6)
 │   ├── static_web_app.tf       # Frontend hosting (Phase 7)
-│   └── terraform.tfvars        # Your secrets (gitignored!)
+│   └── terraform.tfvars        # Secrets (gitignored!)
 ├── index.html                  # Frontend map
 └── TERRAFORM_LEARNING_PLAN.md  # This file
 ```
@@ -251,7 +250,7 @@ resource_group_name = azurerm_resource_group.main.name
 ```
 
 ### Sensitive Data
-- `terraform.tfvars` - Contains your VM password (gitignored!)
+- `terraform.tfvars` - Contains VM password (gitignored!)
 - `*.tfstate` - Contains all resource data including secrets (gitignored!)
 - Sensitive outputs use `sensitive = true` to hide in console
 
