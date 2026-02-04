@@ -1,11 +1,13 @@
 # =============================================================================
-# Azure Static Web Apps - CI/CD Pipeline
+# Azure Static Web Apps - CI/CD Pipeline (GitHub OIDC Authentication)
 # =============================================================================
 # Deploys the honeypot threat map frontend to Azure Static Web Apps.
-# Triggers on pushes to main and pull request events.
+# Uses GitHub's native OIDC authentication (no deployment token needed).
 #
-# Required Secrets:
-#   - AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_WAVE_0061ED81E
+# Azure Setup Required:
+#   1. Go to Azure Portal → Static Web App → Settings → Configuration
+#   2. Under "Deployment authorization policy", select "GitHub"
+#   3. Make sure you're signed in as the correct GitHub account (Eissayou)
 #
 # Docs: https://aka.ms/swaworkflowconfig
 # =============================================================================
@@ -20,6 +22,11 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -41,12 +48,12 @@ jobs:
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_WAVE_0061ED81E }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: "/"          # Root contains index.html
           api_location: ""           # No Azure Functions API
           output_location: "."       # No build step needed (static files)
-          app_build_command: "true"  # Skip build (pre-built static site)
+          skip_app_build: true       # Skip build (pre-built static site)
 
   # ---------------------------------------------------------------------------
   # Cleanup - Closes staging environment when PR is closed
@@ -60,6 +67,6 @@ jobs:
       - name: Close Staging Environment
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_WAVE_0061ED81E }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "close"
           app_location: "/"
