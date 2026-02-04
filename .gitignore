@@ -14,6 +14,7 @@ terraform/*_override.tf.json
 
 # Personal notes
 TERRAFORM_LEARNING_PLAN.md
+STUDY_GUIDE.md
 
 # Azure Functions
 functions/local.settings.json
