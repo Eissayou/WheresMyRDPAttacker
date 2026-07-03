@@ -3,8 +3,52 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Azure Honeypot Threat Map - SOC Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live RDP Attack Map — Azure Honeypot Threat Dashboard</title>
+
+    <!-- Primary SEO -->
+    <meta name="description" content="Live map of RDP brute-force attacks against an Azure honeypot. See attacker locations, top attacking countries, most-targeted usernames, and AI-powered attack trend analysis, refreshed throughout the day.">
+    <meta name="theme-color" content="#000000">
+    <link rel="canonical" href="https://orange-wave-0061ed81e.6.azurestaticapps.net/">
+
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://orange-wave-0061ed81e.6.azurestaticapps.net/">
+    <meta property="og:title" content="Live RDP Attack Map — Azure Honeypot Threat Dashboard">
+    <meta property="og:description" content="Real-time visualization of RDP brute-force attacks on an Azure honeypot: attacker geolocation, top attacking countries, targeted usernames, and AI trend analysis.">
+    <meta property="og:image" content="https://orange-wave-0061ed81e.6.azurestaticapps.net/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:site_name" content="Honeypot Threat Map">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Live RDP Attack Map — Azure Honeypot Threat Dashboard">
+    <meta name="twitter:description" content="Real-time visualization of RDP brute-force attacks on an Azure honeypot.">
+    <meta name="twitter:image" content="https://orange-wave-0061ed81e.6.azurestaticapps.net/og-image.png">
+
+    <!-- Structured data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Azure Honeypot Threat Map",
+      "url": "https://orange-wave-0061ed81e.6.azurestaticapps.net/",
+      "description": "Live visualization of RDP brute-force attacks against an Azure honeypot VM, with country leaderboards, targeted-username stats, and AI trend analysis.",
+      "applicationCategory": "SecurityApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <!-- Performance: warm up third-party origins -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://basemaps.cartocdn.com">
+    <link rel="preconnect" href="https://honeypotpublicdata.blob.core.windows.net">
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -830,6 +874,22 @@
 </head>
 
 <body>
+    <!-- Accessible / crawlable page heading (visually integrated into the map UI) -->
+    <h1 style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">
+        Azure Honeypot Threat Map — Live RDP Brute-Force Attack Dashboard
+    </h1>
+
+    <noscript>
+        <div style="max-width:640px;margin:40px auto;padding:24px;font-family:'Courier New',monospace;color:#00ff00;background:#000;border:1px solid #00ff00;">
+            <h2>Azure Honeypot Threat Map</h2>
+            <p>This dashboard visualizes real RDP (Remote Desktop Protocol) brute-force login
+            attempts against a Windows honeypot deployed in Microsoft Azure. Failed login events are
+            captured from Windows Security logs, geolocated, and plotted on an interactive world map
+            alongside the top attacking countries and the usernames attackers try most often.</p>
+            <p>JavaScript is required to view the live, interactive map and leaderboards.</p>
+        </div>
+    </noscript>
+
     <!-- Main Map -->
     <div id="map"></div>
 
@@ -1059,6 +1119,19 @@
             return Number.isFinite(parsed) ? parsed : 0;
         }
 
+        // Escape untrusted strings before inserting into HTML.
+        // Honeypot data (usernames, city/country from logs) is attacker-influenced,
+        // so every data-derived value MUST pass through this before any innerHTML/popup.
+        function escapeHtml(value) {
+            if (value == null) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // ========================================
         // INITIALIZE MAP
         // ========================================
@@ -1149,8 +1222,15 @@
 
             } catch (error) {
                 console.error('Fetch error:', error);
-                showError(error.message);
-                clearDashboard();
+                // "No data yet" is a normal early-in-the-day state, not a failure.
+                const noData = /No attack data|No attacks recorded/i.test(error.message);
+                if (noData) {
+                    showError(`${error.message}. Data is generated periodically — the map will populate automatically once attacks are recorded.`, { persistent: true });
+                    clearDashboard('No attacks recorded yet — check back soon');
+                } else {
+                    showError(`Could not load attack data: ${error.message}`, { persistent: true });
+                    clearDashboard('Unable to load data');
+                }
             }
         }
 
@@ -1234,12 +1314,12 @@
                 const popupContent = `
                     <div style="font-family: 'Courier New', monospace; color: #000;">
                         <strong style="color: #ff0000;">ATTACK DETECTED</strong><br>
-                        <strong>IP:</strong> ${ip}<br>
-                        <strong>Location:</strong> ${city}${state ? ', ' + state : ''}, ${country}<br>
+                        <strong>IP:</strong> ${escapeHtml(ip)}<br>
+                        <strong>Location:</strong> ${escapeHtml(city)}${state ? ', ' + escapeHtml(state) : ''}, ${escapeHtml(country)}<br>
                         <strong>Failed Attempts:</strong> ${attackCount}<br>
-                        <strong>First Seen:</strong> ${firstSeen}<br>
-                        <strong>Last Seen:</strong> ${formatTimestamp(lastSeen)}<br>
-                        <strong>Usernames Tried:</strong> ${accountsDisplay}
+                        <strong>First Seen:</strong> ${escapeHtml(firstSeen)}<br>
+                        <strong>Last Seen:</strong> ${escapeHtml(formatTimestamp(lastSeen))}<br>
+                        <strong>Usernames Tried:</strong> ${escapeHtml(accountsDisplay)}
                     </div>
                 `;
                 marker.bindPopup(popupContent);
@@ -1290,7 +1370,7 @@
                     item.innerHTML = `
                         <span class="leaderboard-rank">#${index + 1}</span>
                         <div class="leaderboard-country">
-                            ${country}
+                            ${escapeHtml(country)}
                             <div class="leaderboard-bar" style="width: ${barWidth}%"></div>
                         </div>
                         <span class="leaderboard-count">${count.toLocaleString()}</span>
@@ -1364,7 +1444,7 @@
                     const item = document.createElement('div');
                     item.className = 'username-item';
                     item.innerHTML = `
-                        <span class="username-name">${username}</span>
+                        <span class="username-name">${escapeHtml(username)}</span>
                         <span class="username-count">${ipCount} IPs</span>
                     `;
 
@@ -1433,8 +1513,8 @@
                     const item = document.createElement('div');
                     item.className = 'username-detail-item';
                     item.innerHTML = `
-                        <div class="ip">${ip}</div>
-                        <div class="location">${city}, ${country}</div>
+                        <div class="ip">${escapeHtml(ip)}</div>
+                        <div class="location">${escapeHtml(city)}, ${escapeHtml(country)}</div>
                         <div class="attempts">${count.toLocaleString()} total attacks</div>
                     `;
                     list.appendChild(item);
@@ -1459,31 +1539,40 @@
         // ========================================
         // CLEAR DASHBOARD
         // ========================================
-        function clearDashboard() {
+        function clearDashboard(message = 'No data available') {
             clearMarkers();
             // Update all containers (desktop + mobile)
             document.querySelectorAll('#leaderboard-container').forEach(container => {
-                container.innerHTML = '<p class="loading">No data available</p>';
+                container.innerHTML = `<p class="loading">${escapeHtml(message)}</p>`;
             });
             document.querySelectorAll('#username-container').forEach(container => {
-                container.innerHTML = '<p class="loading">No data available</p>';
+                container.innerHTML = `<p class="loading">${escapeHtml(message)}</p>`;
             });
         }
 
         // ========================================
         // ERROR HANDLING
         // ========================================
-        function showError(message) {
-            document.getElementById('error-text').textContent = message;
-            document.getElementById('error-message').style.display = 'block';
+        let errorHideTimer = null;
 
-            // Auto-hide after 5 seconds
-            setTimeout(() => {
-                hideError();
-            }, 5000);
+        // persistent: keep the message visible until the next successful fetch
+        // (used for "no data yet" and load failures, so the map is never blank
+        //  without explanation). Non-persistent messages auto-dismiss.
+        function showError(message, { persistent = false } = {}) {
+            const box = document.getElementById('error-message');
+            document.getElementById('error-text').textContent = message;
+            box.style.display = 'block';
+            box.setAttribute('role', 'alert');
+            box.setAttribute('aria-live', 'assertive');
+
+            if (errorHideTimer) { clearTimeout(errorHideTimer); errorHideTimer = null; }
+            if (!persistent) {
+                errorHideTimer = setTimeout(hideError, 6000);
+            }
         }
 
         function hideError() {
+            if (errorHideTimer) { clearTimeout(errorHideTimer); errorHideTimer = null; }
             document.getElementById('error-message').style.display = 'none';
         }
 
@@ -1801,28 +1890,28 @@
                 let html = `
                     <div style="margin-bottom: 20px; padding: 15px; background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; border-radius: 4px;">
                         <h4 style="margin: 0 0 5px 0; color: #a78bfa; text-transform: uppercase; font-size: 12px;">Executive Summary</h4>
-                        <p style="margin: 0; color: #fff; font-size: 15px; font-weight: 500;">${safeDisplay(result.summary, 'Analysis complete.')}</p>
+                        <p style="margin: 0; color: #fff; font-size: 15px; font-weight: 500;">${escapeHtml(safeDisplay(result.summary, 'Analysis complete.'))}</p>
                     </div>
 
                     <div style="display: grid; gap: 20px;">
                         <div>
                             <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Attack Volume</h4>
-                            <p>${safeDisplay(result.attack_volume, 'No significant changes.')}</p>
+                            <p>${escapeHtml(safeDisplay(result.attack_volume, 'No significant changes.'))}</p>
                         </div>
 
                         <div>
                             <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Geographic Shifts</h4>
-                            <p>${safeDisplay(result.geographic_shifts, 'No significant changes.')}</p>
+                            <p>${escapeHtml(safeDisplay(result.geographic_shifts, 'No significant changes.'))}</p>
                         </div>
 
                         <div>
                             <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Notable IPs</h4>
-                            <p>${safeDisplay(result.notable_ips, 'None detected.')}</p>
+                            <p>${escapeHtml(safeDisplay(result.notable_ips, 'None detected.'))}</p>
                         </div>
 
                         <div>
                             <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Target Behavior</h4>
-                            <p>${safeDisplay(result.target_behavior, 'No significant changes.')}</p>
+                            <p>${escapeHtml(safeDisplay(result.target_behavior, 'No significant changes.'))}</p>
                         </div>
                     </div>
                 `;
@@ -1833,7 +1922,7 @@
                 resultsArea.innerHTML = `
                     <div class="ai-error" style="text-align: center; margin-top: 50px;">
                         <strong>Analysis Failed</strong><br>
-                        ${error.message}
+                        ${escapeHtml(error.message)}
                     </div>
                 `;
             } finally {

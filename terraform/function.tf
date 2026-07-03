@@ -50,17 +50,18 @@ resource "azurerm_linux_function_app" "analysis" {
       python_version = "3.12"
     }
 
-    # Wildcard CORS for simplicity - restrict in production if needed
-    cors {
-      allowed_origins     = ["*"]
-      support_credentials = false
-    }
+    # CORS is handled in application code (function_app.py sets an explicit
+    # Access-Control-Allow-Origin and handles OPTIONS). Leaving the platform
+    # CORS unset avoids duplicate/conflicting Access-Control-Allow-Origin headers.
+    # The allowed origin is controlled by the ALLOWED_ORIGIN app setting below.
   }
 
   app_settings = {
     FUNCTIONS_WORKER_RUNTIME = "python"
     AzureWebJobsFeatureFlags = "EnableWorkerIndexing" # Required for Python V2 decorator model
     GEMINI_API_KEY           = var.gemini_api_key
+    # Origin allowed to call the AI endpoint (must match the deployed site URL).
+    ALLOWED_ORIGIN = var.allowed_origin
   }
 
   tags = var.tags

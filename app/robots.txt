@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://orange-wave-0061ed81e.6.azurestaticapps.net/sitemap.xml

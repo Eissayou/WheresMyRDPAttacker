@@ -18,14 +18,14 @@ jobs:
        id-token: write
        contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
           lfs: false
       - name: Install OIDC Client from Core Package
         run: npm install @actions/core@1.6.0 @actions/http-client
       - name: Get Id Token
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         id: idtoken
         with:
            script: |
@@ -40,10 +40,12 @@ jobs:
           action: "upload"
           ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
           # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
-          app_location: "/" # App source code path
+          # Only the app/ folder is published to the public site. This keeps
+          # terraform/, functions/, and docs OUT of the public web root.
+          app_location: "app" # App source code path (published web root)
           api_location: "" # Api source code path - optional
-          output_location: "." # Built app content directory - optional
-          app_build_command: "true"
+          output_location: "" # No build output subfolder
+          skip_app_build: true # Static site: skip the Oryx build step
           github_id_token: ${{ steps.idtoken.outputs.result }}
           ###### End of Repository/Build Configurations ######
 
@@ -58,4 +60,4 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_WAVE_0061ED81E }}
           action: "close"
-          app_location: "/"
+          app_location: "app"

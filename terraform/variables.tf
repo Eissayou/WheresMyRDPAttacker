@@ -12,6 +12,12 @@ variable "location" {
   default     = "West US 2"
 }
 
+variable "allowed_origin" {
+  description = "Origin permitted to call the AI compare endpoint (the deployed site URL)."
+  type        = string
+  default     = "https://orange-wave-0061ed81e.6.azurestaticapps.net"
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

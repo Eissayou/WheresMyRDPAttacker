@@ -79,8 +79,9 @@ az account show --query "{Name:name, ID:id}" -o table
 
 ### 3. Subscription ID
 ```
-Subscription ID: 6c0c4590-ae27-41ad-9e99-24a262cf04ee
+Subscription ID: <your-azure-subscription-id>
 ```
+> Find yours with `az account show --query id -o tsv`. Never commit the real value.
 
 ---
 
