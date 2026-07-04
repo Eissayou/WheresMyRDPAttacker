@@ -1,6 +1,6 @@
 {
   "globalHeaders": {
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.basemaps.cartocdn.com https://unpkg.com; connect-src 'self' https://honeypotpublicdata.blob.core.windows.net https://aianalysis-hmhudebecwhebrhv.westus2-01.azurewebsites.net; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.basemaps.cartocdn.com https://unpkg.com; connect-src 'self' https://honeypotpublicdata.blob.core.windows.net https://aianalysis-hmhudebecwhebrhv.westus2-01.azurewebsites.net; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "X-Frame-Options": "DENY",
@@ -13,6 +13,8 @@
   "routes": [
     { "route": "/", "headers": { "Cache-Control": "no-cache" } },
     { "route": "/index.html", "headers": { "Cache-Control": "no-cache" } },
+    { "route": "/css/main.css", "headers": { "Cache-Control": "no-cache" } },
+    { "route": "/js/main.js", "headers": { "Cache-Control": "no-cache" } },
     { "route": "/og-image.png", "headers": { "Cache-Control": "public, max-age=604800" } },
     { "route": "/favicon.svg", "headers": { "Cache-Control": "public, max-age=604800" } },
     { "route": "/favicon.ico", "headers": { "Cache-Control": "public, max-age=604800" } }
