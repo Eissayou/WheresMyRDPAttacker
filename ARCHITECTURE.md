@@ -146,10 +146,33 @@ Public container hosting daily attack data files.
 
 ### Static Web App
 
-Frontend visualization using Leaflet.js with marker clustering.
+Frontend visualization using Leaflet.js with marker clustering. Also hosts the
+"AI Trend Analysis" panel, which calls the AI Analysis Function (below).
 
 **Tech Stack**: HTML, CSS, JavaScript, Leaflet.js  
 **Deployment**: GitHub Actions → Azure Static Web Apps
+
+### AI Analysis Function
+
+HTTP-triggered Python Azure Function (`functions/function_app.py`) that compares
+attack data between two dates and returns a Gemini-generated trend analysis.
+
+**Runtime**: Python 3.12 (Azure Functions v2 programming model)  
+**Endpoint**: `POST /api/compare` (anonymous)  
+**AI model**: Google Gemini (`gemini-2.5-flash`) via the `google-genai` SDK  
+**Abuse / cost controls**:
+- Per-IP and global daily rate limits enforced with **Azure Table Storage**
+  (`RateLimits` table) using atomic, optimistic-concurrency (ETag) counters.
+- Fails **closed** by default (`RATE_LIMIT_FAIL_OPEN=false`) to protect the paid
+  Gemini quota if the counter store is unavailable.
+- Request body size cap; attacker-controlled fields (usernames, geo) are
+  sanitized and length-capped before entering the prompt (prompt-injection defense).
+- CORS scoped to the site origin via the `ALLOWED_ORIGIN` app setting.
+
+**Managed identity**: System-assigned identity with the `Storage Table Data
+Contributor` role for the rate-limit table.
+
+See [functions/TROUBLESHOOTING.md](functions/TROUBLESHOOTING.md) for local dev and deployment.
 
 ## API Connections
 
@@ -157,6 +180,8 @@ Frontend visualization using Leaflet.js with marker clustering.
 |------------|-----------|---------|
 | Azure Monitor Logs | OAuth | Query Log Analytics |
 | Azure Blob Storage | Access Key | Write attack data |
+| Azure Table Storage | Managed Identity | AI Function rate-limit counters |
+| Google Gemini | API key (app setting) | AI trend analysis |
 
 **Note**: Azure Monitor Logs connection requires manual OAuth authorization after deployment.
 

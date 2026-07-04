@@ -22,5 +22,19 @@ functions/.python_packages/
 functions/__pycache__/
 functions/.venv/
 
-# Editor
+# Editor / tooling
 .vscode/
+.claude/
+.DS_Store
+
+# Defensive: never commit state, tfvars, or env files from ANY directory
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.auto.tfvars
+.terraform/
+.env
+*.env
+
+# Azure Functions local test dir (referenced by .funcignore)
+functions/test/

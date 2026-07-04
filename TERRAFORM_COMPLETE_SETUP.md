@@ -1,7 +1,7 @@
 # Terraform Complete Setup: Azure Honeypot Infrastructure
 
 
-**Last Updated**: January 2026
+**Last Updated**: July 2026
 
 ---
 
@@ -24,8 +24,8 @@
 
 | Resource | Type | Purpose |
 |----------|------|---------|
-| `HONEYY-TF-TEST` | Resource Group | Container for all resources |
-| `jasonhoneypottest123` | Storage Account | Stores attack JSON data |
+| `honeypot-threat-map-rg` | Resource Group | Container for all resources |
+| `honeypotpublicdata` | Storage Account | Stores attack JSON data |
 | `public-data` | Blob Container | Holds daily attack files |
 | `LogRepo` | Log Analytics Workspace | Collects SecurityEvent logs |
 | `HoneyVM-vnet` | Virtual Network | Network for the VM |
@@ -35,6 +35,9 @@
 | `dcr-security-events` | Data Collection Rule | Sends Security Events to Log Analytics |
 | `DataParser` | Logic App | Runs KQL query, writes to blob |
 | `WheresMyRDPAttacker` | Static Web App | Frontend dashboard |
+| `aianalysis` | Function App (Python) | AI trend analysis via Gemini |
+| `honeypot-functions-plan` | Service Plan | Consumption plan for the Function App |
+| `RateLimits` | Table (Table Storage) | Per-IP / global AI rate-limit counters |
 
 ### Architecture Flow
 
@@ -101,9 +104,15 @@ WheresMyRDPAttacker/
 │   ├── vm.tf                   # VM + Extensions + DCR (Phase 5)
 │   ├── logic_app.tf            # Logic App + Connections (Phase 6)
 │   ├── static_web_app.tf       # Frontend hosting (Phase 7)
+│   ├── function.tf             # AI Function App + Table Storage (Phase 8)
 │   └── terraform.tfvars        # Secrets (gitignored!)
-├── index.html                  # Frontend map
-└── TERRAFORM_LEARNING_PLAN.md  # This file
+├── app/                        # Static site (published web root)
+│   ├── index.html              # Frontend map + SEO
+│   ├── css/main.css            # Styles
+│   └── js/main.js              # App logic
+├── functions/                  # Azure Function (Python) — Gemini AI analysis
+│   └── function_app.py
+└── TERRAFORM_COMPLETE_SETUP.md # This file
 ```
 
 ---
@@ -172,6 +181,12 @@ terraform output
 - **Resources**: `azurerm_static_web_app.frontend`
 - **Concepts**: GitHub integration, deployment tokens
 
+### Phase 8: AI Analysis Function (`function.tf`)
+- **File**: `function.tf`
+- **Resources**: `azurerm_service_plan.functions`, `azurerm_storage_account.functions`, `azurerm_linux_function_app.analysis`, `azurerm_role_assignment.function_table_contributor`
+- **Concepts**: Consumption plan, managed identity + RBAC for Table Storage, app settings (`GEMINI_API_KEY`, `ALLOWED_ORIGIN`, `RATE_LIMIT_FAIL_OPEN`)
+- **Note**: The function *code* is deployed separately (`func azure functionapp publish`), not by Terraform.
+
 ---
 
 ## Post-Deployment Steps
@@ -192,7 +207,7 @@ The Azure Monitor Logs connector requires OAuth sign-in:
 
 ### 3. Configure GitHub for Static Web App
 1. Get deployment token: `terraform output -raw static_web_app_api_key`
-2. Add as GitHub secret: `AZURE_STATIC_WEB_APPS_API_TOKEN`
+2. Add as GitHub secret: `AZURE_STATIC_WEB_APPS_API_TOKEN_ORANGE_WAVE_0061ED81E` (must match the name referenced in the workflow file)
 3. Push to trigger deployment
 
 ---
@@ -289,7 +304,7 @@ We use the modern **Azure Monitor Agent (AMA)** with **Data Collection Rules (DC
 Storage account names must be globally unique. Change `storage_account_name` in `variables.tf`.
 
 ### "VM password doesn't meet complexity requirements"
-Password must have: 12+ chars, uppercase, lowercase, number, special character.
+Password must have: 14+ chars, uppercase, lowercase, number, special character (the Terraform `admin_password` variable enforces a 14-character minimum).
 
 ### Logic App not running
 1. Check the Azure Monitor Logs connection is authorized
