@@ -1,9 +1,11 @@
 # Input Variables
 
 variable "resource_group_name" {
+  # TODO: set to the real production resource group that hosts the Static Web App,
+  # Function App and the honeypotpublicdata storage account.
   description = "Name of the Azure Resource Group"
   type        = string
-  default     = "HONEYY-TF-TEST"
+  default     = "honeypot-threat-map-rg"
 }
 
 variable "location" {
@@ -31,9 +33,9 @@ variable "tags" {
 # Storage Configuration
 
 variable "storage_account_name" {
-  description = "Globally unique storage account name"
+  description = "Globally unique storage account name (matches the real public-data account the frontend reads)"
   type        = string
-  default     = "jasonhoneypottest123"
+  default     = "honeypotpublicdata"
 }
 
 # Log Analytics Configuration
@@ -94,6 +96,11 @@ variable "admin_password" {
   description = "VM administrator password"
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = length(var.admin_password) >= 14
+    error_message = "admin_password must be at least 14 characters (meets Azure Windows complexity minimum)."
+  }
 }
 
 variable "gemini_api_key" {

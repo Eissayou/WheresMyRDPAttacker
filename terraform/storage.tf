@@ -7,7 +7,9 @@ resource "azurerm_storage_account" "storage" {
   location                        = azurerm_resource_group.main.location
   account_tier                    = "Standard"
   account_replication_type        = "LRS"
-  allow_nested_items_to_be_public = true
+  allow_nested_items_to_be_public = true # required: frontend fetches attacks_*.json anonymously
+  min_tls_version                 = "TLS1_2"
+  https_traffic_only_enabled      = true
 
   tags = var.tags
 }
