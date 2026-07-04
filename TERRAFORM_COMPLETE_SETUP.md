@@ -24,7 +24,7 @@
 
 | Resource | Type | Purpose |
 |----------|------|---------|
-| `honeypot-threat-map-rg` | Resource Group | Container for all resources |
+| `HONEYY` | Resource Group | Container for all resources |
 | `honeypotpublicdata` | Storage Account | Stores attack JSON data |
 | `public-data` | Blob Container | Holds daily attack files |
 | `LogRepo` | Log Analytics Workspace | Collects SecurityEvent logs |
@@ -35,8 +35,9 @@
 | `dcr-security-events` | Data Collection Rule | Sends Security Events to Log Analytics |
 | `DataParser` | Logic App | Runs KQL query, writes to blob |
 | `WheresMyRDPAttacker` | Static Web App | Frontend dashboard |
-| `aianalysis` | Function App (Python) | AI trend analysis via Gemini |
-| `honeypot-functions-plan` | Service Plan | Consumption plan for the Function App |
+| `AIAnalysis` | Function App (Python) | AI trend analysis via Gemini |
+| `ASP-HONEYY-9ec3` | Service Plan | Consumption plan for the Function App |
+| `honeyya865` | Storage Account | Function App backing storage |
 | `RateLimits` | Table (Table Storage) | Per-IP / global AI rate-limit counters |
 
 ### Architecture Flow

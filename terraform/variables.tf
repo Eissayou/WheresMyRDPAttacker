@@ -1,11 +1,9 @@
 # Input Variables
 
 variable "resource_group_name" {
-  # TODO: set to the real production resource group that hosts the Static Web App,
-  # Function App and the honeypotpublicdata storage account.
   description = "Name of the Azure Resource Group"
   type        = string
-  default     = "honeypot-threat-map-rg"
+  default     = "HONEYY"
 }
 
 variable "location" {

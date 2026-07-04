@@ -12,7 +12,7 @@
 # Local build downloads Mac wheels incompatible with Azure's Linux container.
 
 resource "azurerm_service_plan" "functions" {
-  name                = "honeypot-functions-plan"
+  name                = "ASP-HONEYY-9ec3"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   os_type             = "Linux"
@@ -22,7 +22,8 @@ resource "azurerm_service_plan" "functions" {
 }
 
 resource "azurerm_storage_account" "functions" {
-  name                       = "${var.storage_account_name}func"
+  # Real backing storage for the Function App (Azure auto-generated the name).
+  name                       = "honeyya865"
   resource_group_name        = azurerm_resource_group.main.name
   location                   = azurerm_resource_group.main.location
   account_tier               = "Standard"
@@ -34,10 +35,10 @@ resource "azurerm_storage_account" "functions" {
 }
 
 resource "azurerm_linux_function_app" "analysis" {
-  # Fixed name so the declared hostname mirrors the real deployed function the
-  # frontend calls (https://aianalysis-...azurewebsites.net/api/compare). Azure
-  # appends its own regional suffix to the base name.
-  name                = "aianalysis"
+  # Real deployed function name (the frontend calls
+  # https://aianalysis-...azurewebsites.net/api/compare — Azure appends the
+  # regional suffix to this base name).
+  name                = "AIAnalysis"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
 
