@@ -23,7 +23,10 @@ RATE_LIMIT_TABLE = "RateLimits"
 DAILY_GLOBAL_LIMIT = 50
 DAILY_IP_LIMIT = 5
 MAX_INCREMENT_RETRIES = 5
-GEMINI_MODEL = "gemini-2.5-flash"
+# gemini-2.5-flash was retired by Google (shut down mid-2026) and returns
+# 404 "no longer available". Using the newest stable flash-lite model for cost;
+# note there is no "gemini-3.5-flash-lite" — the lite tier tops out at 3.1.
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_TIMEOUT_MS = 30_000
 TOP_N_ATTACKERS = 20
 

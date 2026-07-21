@@ -814,11 +814,27 @@ async function compareWithAI() {
         });
 
         if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Analysis failed');
+            // Error bodies aren't always JSON (e.g. a 404 from an undeployed
+            // function is empty) — never choke while reporting; always
+            // surface the HTTP status.
+            let message = `Analysis failed (HTTP ${response.status})`;
+            try {
+                const err = await response.json();
+                if (err && err.error) message = `${err.error} (HTTP ${response.status})`;
+            } catch (_) {
+                if (response.status === 404) {
+                    message = 'Analysis service unreachable (HTTP 404) — the Azure Function may not be deployed.';
+                }
+            }
+            throw new Error(message);
         }
 
-        const result = await response.json();
+        let result;
+        try {
+            result = await response.json();
+        } catch (_) {
+            throw new Error('The analysis service returned an empty or invalid response.');
+        }
 
         // Helper to safely display any value (handles objects/arrays)
         const safeDisplay = (val, fallback = 'No data.') => {

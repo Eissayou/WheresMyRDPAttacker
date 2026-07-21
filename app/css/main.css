@@ -107,6 +107,39 @@ body {
         max-width: 90%;
         padding: 15px;
     }
+
+    /* Give the AI modal nearly the full phone width and trim its padding so
+       the date controls and results have room to breathe. */
+    #ai-modal-content {
+        width: calc(100% - 20px);
+        padding: 15px;
+        max-height: 90vh;
+    }
+
+    .ai-controls {
+        padding: 12px;
+    }
+
+    /* 16px stops iOS Safari from auto-zooming the page when a date field is
+       focused — the zoomed viewport is what made the AI tool and Historical
+       Data panel look like they overflowed off the right edge of the screen. */
+    #date-picker,
+    .ai-controls input[type="date"] {
+        font-size: 16px;
+    }
+}
+
+/* Date inputs use native widgets with an intrinsic minimum width on iOS;
+   never let them force their container wider than the panel. */
+#date-picker,
+.ai-controls input[type="date"] {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* Map popups quote attacker-controlled strings (usernames, city names). */
+.leaflet-popup-content {
+    overflow-wrap: anywhere;
 }
 
 #map {
@@ -177,6 +210,9 @@ body {
     color: #00ff00;
     font-size: 14px;
     margin: 0 10px;
+    /* Long GeoIP names ("Venezuela, Bolivarian Republic of") wrap safely. */
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .leaderboard-count {
@@ -185,6 +221,8 @@ body {
     font-size: 16px;
     min-width: 60px;
     text-align: right;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .leaderboard-bar {
@@ -227,6 +265,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     margin: 6px 0;
     padding: 6px 8px;
     background: rgba(50, 0, 100, 0.3);
@@ -250,11 +289,19 @@ body {
     color: #ff00ff;
     font-weight: bold;
     font-family: 'Courier New', monospace;
+    /* Usernames are attacker-controlled and can be long unbroken strings
+       (e.g. BC_PUEBLA@HOTMAIL.COM) — wrap them instead of pushing the
+       count off the right edge of the panel on mobile. */
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .username-count {
     color: #ffaa00;
     font-weight: bold;
+    /* Keep "N IPs" on one line and never let it get shoved off-screen. */
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 #target-panel p {
@@ -363,10 +410,13 @@ body {
     border: 2px solid #ff00ff;
     border-radius: 8px;
     padding: 25px;
+    width: 90%;
     max-width: 600px;
     max-height: 70vh;
     overflow-y: auto;
     box-shadow: 0 0 10px rgba(255, 0, 255, 0.3);
+    /* Modal title + rows quote attacker-controlled usernames/IPs — wrap them. */
+    overflow-wrap: anywhere;
 }
 
 #username-modal h3 {
@@ -695,6 +745,15 @@ body {
     font-size: 14px;
     line-height: 1.6;
     color: #e0e0e0;
+    /* AI output quotes attacker data (long usernames, IPv6 addresses).
+       overflow-wrap inherits, so every generated element wraps long tokens
+       instead of stretching the grid past the modal edge on phones. */
+    overflow-wrap: anywhere;
+}
+
+/* Grid/flex children may never refuse to shrink inside the results area. */
+#ai-results-area * {
+    min-width: 0;
 }
 
 #ai-results-area h1,
