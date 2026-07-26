@@ -130,11 +130,29 @@ In DevTools the request never appears in the Network tab, and the console shows
 `TypeError: Failed to fetch`.
 
 **Root Cause:**
-CORS, not a Function crash. The Function returns
-`Access-Control-Allow-Origin` for allowlisted origins only. When the page's
-origin isn't on that list the browser rejects the preflight and cancels the
-request before it is ever sent — which is why nothing reaches the server and the
-error is so unhelpful.
+CORS, not a Function crash. When the page's origin isn't allowlisted the browser
+rejects the preflight and cancels the request before it is ever sent — which is
+why nothing reaches the server and the error is so unhelpful.
+
+> ⚠️ **There are TWO CORS layers, and the platform one wins.**
+>
+> 1. **Azure platform CORS** on the Function App (`az functionapp cors`). This
+>    answers the `OPTIONS` preflight *before your Python runs* and injects
+>    `Access-Control-Allow-Origin` on responses.
+> 2. **`ALLOWED_ORIGIN` in `function_app.py`**, which sets the same header from
+>    application code.
+>
+> An origin in the platform list is accepted **even if it is absent from
+> `ALLOWED_ORIGIN`**. So editing the code alone will not lock anything down.
+> Always check both:
+>
+> ```bash
+> az functionapp cors show -g HONEYY -n AIAnalysis --query allowedOrigins -o tsv
+> ```
+>
+> A telltale sign the platform layer is handling preflight: the `OPTIONS`
+> response lacks `Access-Control-Max-Age` while the actual `POST` response has
+> it — the header is set by the code, which preflight never reaches.
 
 Origins must match **exactly**, including scheme and port:
 `http://localhost:8081` and `http://localhost:8080` are different origins, and
@@ -177,10 +195,21 @@ az functionapp config appsettings set \
   --settings "ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net"
 ```
 
-> ⚠️ Don't leave a `localhost` origin allowlisted. `Origin` is set by the
-> browser, so allowing `http://localhost:8081` lets **anyone** serving a page on
-> that port call this endpoint and spend your Gemini quota. The per-IP (5/day)
-> and global (50/day) rate limits cap the damage, but they don't prevent it.
+And for the platform layer:
+
+```bash
+# add (temporarily) / remove a dev origin
+az functionapp cors add    -g HONEYY -n AIAnalysis --allowed-origins "http://127.0.0.1:5500"
+az functionapp cors remove -g HONEYY -n AIAnalysis --allowed-origins "http://127.0.0.1:5500"
+```
+
+> ⚠️ Don't leave a `localhost` / `127.0.0.1` origin allowlisted in either layer.
+> `Origin` is set by the browser, so allowing `http://127.0.0.1:5500` lets
+> **anyone** serving a page on that port call this endpoint and spend your Gemini
+> quota. The per-IP (5/day) and global (50/day) rate limits cap the damage but
+> don't prevent it. Current production allowlist is deliberately just
+> `https://portal.azure.com` (for the portal's Code+Test console) and the Static
+> Web App origin.
 
 ---
 
