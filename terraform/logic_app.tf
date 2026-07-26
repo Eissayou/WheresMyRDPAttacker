@@ -10,8 +10,12 @@ data "azurerm_subscription" "current" {}
 
 locals {
   kql_query = <<-EOT
-let timeOffset = 8h;
-let lookbackTimeUtc = startofday(now() - timeOffset) + timeOffset;
+// Pacific is UTC-8 only in winter; it is UTC-7 under daylight saving. A fixed
+// 8h offset therefore started the window an hour late for ~8 months of the year
+// while the blob filename (see the Create blob step) is DST-aware, so each
+// daily file silently lost its first hour of events. datetime_utc_to_local /
+// datetime_local_to_utc apply the correct offset for the date in question.
+let lookbackTimeUtc = datetime_local_to_utc(startofday(datetime_utc_to_local(now(), 'US/Pacific')), 'US/Pacific');
 
 SecurityEvent
 | where TimeGenerated >= lookbackTimeUtc

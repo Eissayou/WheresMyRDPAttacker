@@ -159,7 +159,7 @@ attack data between two dates and returns a Gemini-generated trend analysis.
 
 **Runtime**: Python 3.12 (Azure Functions v2 programming model)  
 **Endpoint**: `POST /api/compare` (anonymous)  
-**AI model**: Google Gemini (`gemini-2.5-flash`) via the `google-genai` SDK  
+**AI model**: Google Gemini (`gemini-3.1-flash-lite`) via the `google-genai` SDK  
 **Abuse / cost controls**:
 - Per-IP and global daily rate limits enforced with **Azure Table Storage**
   (`RateLimits` table) using atomic, optimistic-concurrency (ETag) counters.
@@ -189,8 +189,9 @@ See [functions/TROUBLESHOOTING.md](functions/TROUBLESHOOTING.md) for local dev a
 
 - **Log Analytics**: Stores timestamps in UTC
 - **Logic App Trigger**: Uses Pacific Standard Time
-- **File Naming**: Based on PST date (`attacks_2026-01-01.json`)
-- **Frontend**: Displays times in user's local timezone
+- **File Naming**: Based on the Pacific date, DST-aware (`attacks_2026-01-01.json`)
+- **Frontend**: Displays all times in Pacific Time, not the visitor's local zone
+  (`America/Los_Angeles`, so the clock always matches the file names)
 
 ## Infrastructure as Code
 

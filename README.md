@@ -95,6 +95,27 @@ cd functions
 func start
 ```
 
+> **The AI panel does not work from `localhost` against the deployed Function.**
+> The Function's CORS allowlist contains only the Static Web App origin, so a
+> request from any other origin is rejected at the preflight and the browser
+> reports `TypeError: Failed to fetch`. The map and leaderboards are unaffected —
+> they read public blobs, which have no such restriction.
+>
+> This is intentional: the endpoint spends a paid Gemini quota, so no localhost
+> origin is allowed by default — otherwise anyone serving a page on that port
+> could call it.
+>
+> If you need the AI panel while developing, add your origin to the Function's
+> `ALLOWED_ORIGIN` app setting **temporarily**, restart the Function, and remove
+> it when you're done. Origins must match exactly, including scheme and port:
+>
+> ```
+> ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net,http://localhost:8081
+> ```
+>
+> The same applies when moving to a custom domain — see
+> [Moving to a custom domain](#moving-to-a-custom-domain).
+
 See [functions/TROUBLESHOOTING.md](functions/TROUBLESHOOTING.md) for local-dev and deployment tips.
 
 ## Infrastructure (Terraform)
@@ -116,6 +137,23 @@ terraform apply
 3. Push to `main` to trigger the frontend deployment
 
 The static site itself deploys automatically via GitHub Actions on push to `main`. See [terraform/README.md](terraform/README.md) and [TERRAFORM_COMPLETE_SETUP.md](TERRAFORM_COMPLETE_SETUP.md) for complete instructions.
+
+## Moving to a custom domain
+
+Hostnames are referenced in a handful of places. Changing the site origin means
+updating all of them, or SEO tags and the CSP will point at the old address:
+
+| File | What to change |
+| --- | --- |
+| `app/js/main.js` | `STORAGE_ACCOUNT`, `BLOB_CONTAINER`, `AI_FUNCTION_URL` |
+| `app/staticwebapp.config.json` | `connect-src` in the CSP (blob + Function hosts) |
+| `app/index.html` | `canonical`, `og:url`, `og:image`, `twitter:image`, the JSON-LD `url` / `mainEntityOfPage`, and the `preconnect` hints |
+| `app/sitemap.xml` | `<loc>` |
+| `app/robots.txt` | `Sitemap:` |
+| `functions/function_app.py` | `ALLOWED_ORIGIN` default (or set the `ALLOWED_ORIGIN` app setting instead) |
+
+`terraform/variables.tf` also carries these values, but that config is
+illustrative and is not applied — see the note in `terraform/README.md`.
 
 ## Security Notice
 

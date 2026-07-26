@@ -116,6 +116,74 @@ def get_client():
 
 ---
 
+## 🔴 Issue 6: AI Panel Shows "Could not reach the analysis service"
+
+**Symptom:**
+The map and leaderboards load fine, but clicking **Analyze** fails immediately:
+```
+Analysis Failed
+Could not reach the analysis service from http://localhost:8081.
+This is usually the origin missing from the Function's ALLOWED_ORIGIN setting,
+or the service being offline.
+```
+In DevTools the request never appears in the Network tab, and the console shows
+`TypeError: Failed to fetch`.
+
+**Root Cause:**
+CORS, not a Function crash. The Function returns
+`Access-Control-Allow-Origin` for allowlisted origins only. When the page's
+origin isn't on that list the browser rejects the preflight and cancels the
+request before it is ever sent — which is why nothing reaches the server and the
+error is so unhelpful.
+
+Origins must match **exactly**, including scheme and port:
+`http://localhost:8081` and `http://localhost:8080` are different origins, and
+so are `https://eissayou.com` and `https://www.eissayou.com`.
+
+The map and leaderboards are unaffected because they read public blobs, which
+have no CORS restriction.
+
+**Confirm it's CORS** (this costs nothing — no Gemini call):
+```bash
+curl -s -i -X OPTIONS \
+  https://<your-function>.azurewebsites.net/api/compare \
+  -H "Origin: http://localhost:8081" \
+  -H "Access-Control-Request-Method: POST"
+```
+If the response has no `Access-Control-Allow-Origin` matching your origin, that's
+the problem. A `204` with a matching header means CORS is fine and the issue is
+elsewhere.
+
+**Solution:**
+For a **custom domain**, add it permanently to the `ALLOWED_ORIGIN` app setting
+(comma-separated) and restart the Function App:
+
+| Setting | Value |
+|---------|-------|
+| `ALLOWED_ORIGIN` | `https://orange-wave-0061ed81e.6.azurestaticapps.net,https://www.yourdomain.com` |
+
+For **local development**, add your origin the same way but treat it as
+temporary, and remove it when you're finished:
+
+```bash
+# enable local access
+az functionapp config appsettings set \
+  --name AIAnalysis --resource-group <your-rg> \
+  --settings "ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net,http://localhost:8081"
+
+# revert to production-only when done
+az functionapp config appsettings set \
+  --name AIAnalysis --resource-group <your-rg> \
+  --settings "ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net"
+```
+
+> ⚠️ Don't leave a `localhost` origin allowlisted. `Origin` is set by the
+> browser, so allowing `http://localhost:8081` lets **anyone** serving a page on
+> that port call this endpoint and spend your Gemini quota. The per-IP (5/day)
+> and global (50/day) rate limits cap the damage, but they don't prevent it.
+
+---
+
 ## ✅ Complete Working Deployment Command
 
 ```bash
@@ -134,3 +202,5 @@ func azure functionapp publish <your-app-name> --build remote
 | `AzureWebJobsFeatureFlags` | `EnableWorkerIndexing` |
 | `AzureWebJobsStorage` | `DefaultEndpointsProtocol=https;...` |
 | `GEMINI_API_KEY` | Your API key |
+| `ALLOWED_ORIGIN` | Comma-separated CORS allowlist. Optional — defaults to the Static Web App origin only. See Issue 6. |
+| `RATE_LIMIT_FAIL_OPEN` | Optional. `false` (default) denies requests when the counter store is unavailable, protecting the paid Gemini quota. |

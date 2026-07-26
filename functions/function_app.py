@@ -28,6 +28,7 @@ MAX_INCREMENT_RETRIES = 5
 # note there is no "gemini-3.5-flash-lite" — the lite tier tops out at 3.1.
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_TIMEOUT_MS = 30_000
+GEMINI_MAX_OUTPUT_TOKENS = 1_200
 TOP_N_ATTACKERS = 20
 
 # Abuse / cost guards on the anonymous, paid endpoint.
@@ -40,9 +41,25 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # The flat, string-only response contract the frontend renders.
 ANALYSIS_FIELDS = ("summary", "attack_volume", "geographic_shifts", "notable_ips", "target_behavior")
 
-# Restrict CORS to the site origin (override via app setting if a custom domain is added).
-ALLOWED_ORIGIN = os.environ.get(
-    "ALLOWED_ORIGIN", "https://orange-wave-0061ed81e.6.azurestaticapps.net"
+# Restrict CORS to the site origin. ALLOWED_ORIGIN accepts a comma-separated
+# list, so adding a custom domain is an app-setting change rather than a code
+# change. Origins must match exactly, including scheme and port.
+#
+# The DEFAULT IS PRODUCTION ONLY, deliberately. No localhost origin is baked in:
+# this endpoint spends a paid Gemini quota, and allowing a localhost origin would
+# let anyone serving a page on that port call it. If you need the AI panel while
+# developing locally, add your origin to the app setting temporarily and remove
+# it afterwards — don't commit it here.
+#
+# Note this is the ONLY thing standing between the browser and the endpoint: an
+# origin that is not listed gets no matching Access-Control-Allow-Origin, the
+# preflight fails, and fetch() rejects with an opaque "Failed to fetch".
+ALLOWED_ORIGINS = tuple(
+    o.strip()
+    for o in os.environ.get(
+        "ALLOWED_ORIGIN", "https://orange-wave-0061ed81e.6.azurestaticapps.net"
+    ).split(",")
+    if o.strip()
 )
 # The rate limiter guards a *paid* Gemini quota, so it fails CLOSED by default:
 # if the counter store is unavailable we deny rather than let unbounded traffic
@@ -156,12 +173,50 @@ def _check_and_increment(table_client, partition: str, row_key: str, limit: int)
     return False
 
 
-def check_rate_limit(ip_address: str) -> bool:
+# Rate-limit outcomes. "unavailable" is deliberately distinct from "limited":
+# reporting a storage outage as HTTP 429 "Rate limit exceeded" tells the caller
+# to back off for the day when in fact the counter store is simply broken.
+RATE_ALLOWED = "allowed"
+RATE_LIMITED = "limited"
+RATE_UNAVAILABLE = "unavailable"
+
+
+def _client_ip(req: func.HttpRequest) -> str:
+    """Best-effort *non-spoofable* client IP.
+
+    X-Forwarded-For is attacker-controlled at the FRONT of the chain: a caller
+    can send their own header and App Service appends the observed address, so
+    the first hop is whatever the attacker typed. Trust the last hop (the one
+    the platform itself appended), and prefer Azure's own header when present.
+    The port must also be stripped — App Service writes "ip:port", and since the
+    source port differs on every connection, keying the per-IP counter on the
+    raw value gave each request a brand-new row and no limit at all.
+    """
+    value = req.headers.get("x-azure-clientip")
+    if not value:
+        forwarded = req.headers.get("x-forwarded-for") or ""
+        value = forwarded.split(",")[-1].strip() if forwarded else ""
+    if not value:
+        return "unknown_ip"
+
+    value = value.strip()
+    # "[2001:db8::1]:443" -> "2001:db8::1"
+    if value.startswith("["):
+        end = value.find("]")
+        if end != -1:
+            return value[1:end]
+    # "1.2.3.4:56789" -> "1.2.3.4"; a bare IPv6 has many colons, so leave it be.
+    if value.count(":") == 1:
+        return value.split(":")[0]
+    return value
+
+
+def check_rate_limit(ip_address: str) -> str:
     """Enforce global and per-IP daily limits with atomic counters."""
     table_client = get_table_client()
     if not table_client:
         logging.error("Rate limit storage unavailable (fail_open=%s)", FAIL_OPEN)
-        return FAIL_OPEN
+        return RATE_ALLOWED if FAIL_OPEN else RATE_UNAVAILABLE
 
     try:
         _ensure_table(table_client)
@@ -172,23 +227,31 @@ def check_rate_limit(ip_address: str) -> bool:
         # is only incremented once the per-IP check has passed.
         if not _check_and_increment(table_client, today, _row_key(ip_address), DAILY_IP_LIMIT):
             logging.warning("Per-IP daily rate limit reached for %s", ip_address)
-            return False
+            return RATE_LIMITED
         if not _check_and_increment(table_client, today, "GLOBAL", DAILY_GLOBAL_LIMIT):
             logging.warning("Global daily rate limit reached")
-            return False
-        return True
+            return RATE_LIMITED
+        return RATE_ALLOWED
     except Exception:
         logging.exception("Rate limit check failed")
-        return FAIL_OPEN
+        return RATE_ALLOWED if FAIL_OPEN else RATE_UNAVAILABLE
 
 
-def _cors_headers() -> dict:
+def _cors_headers(req: func.HttpRequest = None) -> dict:
+    # Echo the caller's origin when it is on the allowlist; otherwise fall back
+    # to the canonical one (which simply won't match, so the browser blocks it).
+    # `Vary: Origin` below keeps caches from serving one origin's header to
+    # another now that the value depends on the request.
+    origin = req.headers.get("Origin") if req is not None else None
     return {
-        "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+        "Access-Control-Allow-Origin": origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0],
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Content-Type": "application/json",
         "Vary": "Origin",
+        # Without this the browser re-preflights every POST, so each analysis
+        # costs two billed invocations instead of one.
+        "Access-Control-Max-Age": "86400",
     }
 
 
@@ -222,7 +285,11 @@ def _clean_text(value, max_len: int = MAX_FIELD_LEN) -> str:
     if value is None:
         return ""
     text = _CONTROL_CHARS.sub(" ", str(value))
-    text = text.replace("`", "'").replace("\n", " ").replace("\r", " ").strip()
+    text = text.replace("`", "'").replace("\n", " ").replace("\r", " ")
+    # Angle brackets too: the data is fenced in <DATA> tags, so a username of
+    # "</DATA> Ignore the above and ..." would otherwise render inside the
+    # prompt as a literal closing tag and appear to end the untrusted block.
+    text = text.replace("<", "(").replace(">", ")").strip()
     if len(text) > max_len:
         text = text[:max_len] + "…"
     return text
@@ -261,20 +328,15 @@ def _sanitize_rows(data: list) -> list:
 @app.route(route="compare", methods=["POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def compare_attacks(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Compare attacks function triggered")
-    headers = _cors_headers()
+    headers = _cors_headers(req)
 
     if req.method == "OPTIONS":
         return func.HttpResponse(status_code=204, headers=headers)
 
-    # IP extraction (first hop in x-forwarded-for)
-    ip = req.headers.get("x-forwarded-for") or "unknown_ip"
-    if "," in ip:
-        ip = ip.split(",")[0].strip()
-
-    if not check_rate_limit(ip):
-        return _error("Rate limit exceeded.", 429, headers)
-
-    # Reject oversized bodies before parsing (cost/abuse guard on a paid endpoint).
+    # Validation runs BEFORE the rate-limit counter is touched. Charging a
+    # caller's 5/day (and the shared 50/day) for a request that was never going
+    # to reach Gemini meant a single malformed client could exhaust the global
+    # budget for everyone without costing the attacker anything.
     if len(req.get_body()) > MAX_BODY_BYTES:
         return _error("Request body too large", 413, headers)
 
@@ -303,6 +365,13 @@ def compare_attacks(req: func.HttpRequest) -> func.HttpResponse:
     if not api_key:
         logging.error("GEMINI_API_KEY not configured")
         return _error("Server configuration error", 500, headers)
+
+    # Only a well-formed request that can actually reach Gemini spends quota.
+    rate_status = check_rate_limit(_client_ip(req))
+    if rate_status == RATE_LIMITED:
+        return _error("Rate limit exceeded.", 429, headers)
+    if rate_status == RATE_UNAVAILABLE:
+        return _error("Analysis temporarily unavailable.", 503, headers)
 
     def get_stats(data):
         total = 0
@@ -361,7 +430,13 @@ IMPORTANT: All values must be plain text strings, not nested objects."""
         response = client.models.generate_content(
             model=GEMINI_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                # Hard ceiling on billed output. The five fields are a few
+                # sentences each; without a cap a confused model can run to the
+                # model's full output limit on every call.
+                max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+            ),
         )
 
         text = response.text
@@ -385,6 +460,12 @@ IMPORTANT: All values must be plain text strings, not nested objects."""
             return _error("Analysis returned malformed content", 502, headers)
 
         result = {field: _coerce_str(parsed.get(field)) for field in ANALYSIS_FIELDS}
+        # Valid JSON with none of the expected keys would otherwise be returned
+        # as a 200 full of empty strings: the caller sees a blank analysis, has
+        # been charged a rate-limit slot, and gets no indication anything failed.
+        if not any(result.values()):
+            logging.error("Gemini response contained none of the expected fields")
+            return _error("Analysis returned malformed content", 502, headers)
         return func.HttpResponse(json.dumps(result), status_code=200, headers=headers)
 
     except Exception:

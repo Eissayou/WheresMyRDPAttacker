@@ -11,49 +11,119 @@ const BLOB_BASE_URL = `https://${STORAGE_ACCOUNT}.blob.core.windows.net/${BLOB_C
 // AI trend-analysis endpoint (Azure Function). Must also be allowed by the CSP connect-src.
 const AI_FUNCTION_URL = 'https://aianalysis-hmhudebecwhebrhv.westus2-01.azurewebsites.net/api/compare';
 
-const AUTO_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes (matches Logic App)
-const AUTO_REFRESH_BUFFER_MS = 2 * 60 * 1000; // UI buffer to allow blob/pipeline delay
+const REFRESH_PERIOD_MS = 30 * 60 * 1000;  // Logic App cadence (:00 and :30)
+const REFRESH_BUFFER_MS = 2 * 60 * 1000;   // wait for the new blob to actually land
+const REFRESH_TICK_MS = 60 * 1000;         // how often we check whether a refresh is due
+
+const PACIFIC_TZ = 'America/Los_Angeles';
+const LEADERBOARD_SIZE = 5;
+const MAX_POPUP_ACCOUNTS = 5;
+
+// Marker severity bands. `fill` is the SVG fill Leaflet applies; `cls` sets
+// `color` in CSS so the glow (which uses currentColor) matches — that used to
+// need a per-marker 'add' listener writing element.style.color by hand.
+const SEVERITY_BANDS = [
+    { min: 50, fill: '#ff0000', cls: 'sev-critical' },
+    { min: 20, fill: '#ff6600', cls: 'sev-high' },
+    { min: 5, fill: '#ffaa00', cls: 'sev-medium' },
+    { min: -Infinity, fill: '#00ff00', cls: 'sev-low' }
+];
+
+// The five string fields the Azure Function contract guarantees, minus the
+// summary which gets its own highlighted block.
+const AI_SECTIONS = [
+    { key: 'attack_volume', label: 'Attack Volume', fallback: 'No significant changes.' },
+    { key: 'geographic_shifts', label: 'Geographic Shifts', fallback: 'No significant changes.' },
+    { key: 'notable_ips', label: 'Notable IPs', fallback: 'None detected.' },
+    { key: 'target_behavior', label: 'Target Behavior', fallback: 'No significant changes.' }
+];
 
 // ========================================
-// GLOBAL VARIABLES
+// APP STATE
 // ========================================
 let map;
-let markers = [];
 let markerClusterGroup;
-let attackData = [];
+let attackData = [];          // always holds *normalized* rows (see normalizeAttack)
 let isLiveMode = true;
-let autoRefreshTimer;
-let autoRefreshCountdownTimer;
-let nextAutoRefreshAt;
+let refreshTimer = null;
+let countdownTimer = null;
+let nextAutoRefreshAt = 0;
+let analyzeIconHtml = '';     // captured from the markup once, restored after loading
+let mapUnavailable = false;   // Leaflet CDN blocked — everything else still runs
 
+// ========================================
+// DOM HELPERS
+// ========================================
+const $ = (id) => document.getElementById(id);
+
+// Build an element in one call. Using textContent everywhere means no data ever
+// reaches an HTML parser, so attacker-controlled strings (usernames, city names)
+// cannot inject markup — there is no escaping step to forget.
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+}
+
+// Standard "nothing to show" paragraph used by every panel.
+const notice = (message) => el('p', 'loading', message);
+
+// ========================================
+// DATE / TIME (all Pacific, all via cached Intl formatters)
+// ========================================
+// Intl formatters are expensive to construct; these are built once instead of
+// per call (formatTimestamp alone runs twice per attack row).
+const isoDateFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PACIFIC_TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+});
+const clockFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: PACIFIC_TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+});
+const stampFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: PACIFIC_TZ, month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+});
+
+// Current Pacific date (or an offset in whole days) as YYYY-MM-DD. Used for both
+// the date pickers and the blob file names so they never disagree near midnight.
+// en-CA formats as YYYY-MM-DD natively, so no manual part assembly is needed.
+function getDateInPacific(offsetDays = 0) {
+    const today = isoDateFmt.format(new Date());
+    if (!offsetDays) return today;
+    // Shift whole days in UTC so the arithmetic never crosses a local DST
+    // boundary (adding 86_400_000 ms to a wall-clock time can land on the
+    // wrong date on transition days).
+    const [y, m, d] = today.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + offsetDays)).toISOString().slice(0, 10);
+}
+
+const getTodayDate = () => getDateInPacific(0);
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime()) ? 'N/A' : stampFmt.format(date);
+}
+
+// ========================================
+// DATA NORMALIZATION
+// ========================================
+// The blob has been written by two different pipeline versions, so every field
+// has a snake_case and a PascalCase spelling. Reconciling that ONCE at fetch
+// time means no renderer below ever repeats `attack.city || attack.City`.
 function toCount(value) {
     if (value == null) return 0;
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-    if (typeof value === 'string') {
-        const cleaned = value.replace(/,/g, '').trim();
-        const parsed = Number(cleaned);
-        return Number.isFinite(parsed) ? parsed : 0;
-    }
-    const parsed = Number(value);
+    const parsed = Number(String(value).replace(/,/g, '').trim());
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
-// Escape untrusted strings before inserting into HTML.
-// Honeypot data (usernames, city/country from logs) is attacker-influenced,
-// so every data-derived value MUST pass through this before any innerHTML/popup.
-function escapeHtml(value) {
-    if (value == null) return '';
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+function toCoord(value) {
+    if (value == null) return NaN;
+    return typeof value === 'number' ? value : parseFloat(value);
 }
 
-// ========================================
-// DATA HELPERS
-// ========================================
 // Parse the target_accounts field (a JSON string from KQL make_set, or an array).
 function parseAccounts(attack) {
     let accounts = attack.target_accounts;
@@ -73,26 +143,72 @@ function cleanUsername(raw) {
     return parts[parts.length - 1].toUpperCase().trim();
 }
 
-// Current date (or an offset in days) as YYYY-MM-DD in Pacific Time. Used for both
-// the date pickers and the blob file names so they never disagree near midnight.
-function getDateInPacific(offsetDays = 0) {
-    const now = new Date();
-    const pacific = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-    pacific.setDate(pacific.getDate() + offsetDays);
-    const year = pacific.getFullYear();
-    const month = String(pacific.getMonth() + 1).padStart(2, '0');
-    const day = String(pacific.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+function normalizeAttack(raw) {
+    return {
+        ip: raw.ip || raw.IpAddress || 'Unknown',
+        city: raw.city || raw.City || 'Unknown',
+        state: raw.state || raw.State || '',
+        country: raw.country || raw.Country || 'Unknown',
+        lat: toCoord(raw.lat ?? raw.Latitude),
+        lon: toCoord(raw.lon ?? raw.Longitude),
+        count: toCount(raw.attack_count ?? raw.FailureCount),
+        firstSeen: raw.first_seen || null,
+        lastSeen: raw.last_seen || raw.timestamp || null,
+        // Cleaned and de-duplicated here, so "unique usernames per IP" is a
+        // property of the data rather than something each renderer re-derives.
+        accounts: [...new Set(parseAccounts(raw).map(cleanUsername).filter(Boolean))]
+    };
 }
 
 // ========================================
-// INITIALIZE MAP
+// MAP
 // ========================================
+// Zoom at which the whole world fits the map's width (tiles are 256px at zoom 0
+// and double each level). Hardcoding minZoom: 2 meant a 375px phone could only
+// ever show ~37% of the map, with no way to zoom out to the rest.
+function getWorldFitZoom() {
+    const width = map ? map.getSize().x : window.innerWidth;
+    if (width < 1) return 0;
+    return Math.max(0, Math.floor(Math.log2(width / 256)));
+}
+
+// True once the container has actually been laid out. A map in a hidden tab or
+// a display:none ancestor measures 0x0, and every zoom calculation against that
+// produces garbage.
+function mapHasSize() {
+    if (!map) return false;
+    const size = map.getSize();
+    return size.x > 0 && size.y > 0;
+}
+
+// Frame the viewport on the attacks themselves, once, after the first load.
+// A fixed center/zoom meant a phone opened on an arbitrary slice of ocean;
+// this always opens on where the traffic actually is. Only on the first load,
+// so a later auto-refresh never yanks the view out from under someone.
+let hasFitToData = false;
+
+function fitMapToData() {
+    // Deliberately does NOT set hasFitToData when the container has no size —
+    // fitting against a 0x0 map yields a nonsense zoom, so leave it pending and
+    // let the ResizeObserver below retry once the real size is known.
+    if (hasFitToData || !mapHasSize()) return;
+
+    const points = attackData
+        .filter((a) => !Number.isNaN(a.lat) && !Number.isNaN(a.lon))
+        .map((a) => [a.lat, a.lon]);
+    if (points.length === 0) return;
+
+    hasFitToData = true;
+    map.fitBounds(L.latLngBounds(points), { padding: [30, 30], maxZoom: 5, animate: false });
+}
+
 function initMap() {
+    const fitZoom = getWorldFitZoom();
+
     map = L.map('map', {
         center: [20, 0],
-        zoom: 2,
-        minZoom: 2,
+        zoom: fitZoom,
+        minZoom: fitZoom,
         maxZoom: 18,
         worldCopyJump: true,
         maxBounds: L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180)),
@@ -106,7 +222,6 @@ function initMap() {
         maxZoom: 20
     }).addTo(map);
 
-    // Initialize marker cluster group
     markerClusterGroup = L.markerClusterGroup({
         spiderfyOnMaxZoom: true,         // Enable spider when fully zoomed (shows stacked markers)
         showCoverageOnHover: false,      // Cleaner hover (no blue overlay)
@@ -115,290 +230,280 @@ function initMap() {
         disableClusteringAtZoom: 12,     // Stop clustering at city-level zoom
         spiderfyDistanceMultiplier: 2,   // Larger spread for easier clicking
         spiderfyDistanceSurplus: 40,     // Extra distance between markers
-        spiderLegPolylineOptions: {      // Make spider legs more visible
-            weight: 2,
-            color: '#00ffff',
-            opacity: 0.6
-        },
-        animate: true,                   // Smooth animations
+        spiderLegPolylineOptions: { weight: 2, color: '#00ffff', opacity: 0.6 },
+        animate: true,
         animateAddingMarkers: false,     // Disable to avoid errors with circle markers
-        iconCreateFunction: function (cluster) {
-            const childCount = cluster.getChildCount();
-            let c = ' marker-cluster-';
-            if (childCount < 10) {
-                c += 'small';
-            } else if (childCount < 50) {
-                c += 'medium';
-            } else {
-                c += 'large';
-            }
+        chunkedLoading: true,            // Yield to the main thread while adding in bulk
+        iconCreateFunction: (cluster) => {
+            const count = cluster.getChildCount();
+            const size = count < 10 ? 'small' : count < 50 ? 'medium' : 'large';
             return new L.DivIcon({
-                html: '<div><span>' + childCount + '</span></div>',
-                className: 'marker-cluster' + c,
+                html: `<div><span>${count}</span></div>`,
+                className: `marker-cluster marker-cluster-${size}`,
                 iconSize: new L.Point(40, 40)
             });
         }
     });
     map.addLayer(markerClusterGroup);
+
+    observeMapSize();
+}
+
+// Keep minZoom honest as the container changes size, and recover from the case
+// where the map was built with no size at all. A ResizeObserver on the
+// container catches all of it — device rotation, window resize, and a hidden
+// tab becoming visible (which fires no window 'resize' event).
+function observeMapSize() {
+    let timer;
+    const onResize = () => {
+        if (!mapHasSize()) return;
+        map.invalidateSize({ animate: false });
+
+        const zoom = getWorldFitZoom();
+        map.setMinZoom(zoom);
+        if (map.getZoom() < zoom) map.setZoom(zoom);
+
+        fitMapToData();  // no-op once it has successfully run
+    };
+
+    new ResizeObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(onResize, 150);
+    }).observe($('map'));
 }
 
 // ========================================
-// FETCH ATTACK DATA
+// MARKERS
 // ========================================
+const severityFor = (count) => SEVERITY_BANDS.find((band) => count > band.min);
+
+// Built on demand: Leaflet accepts a function for popup content, so this only
+// runs for the handful of markers a visitor actually clicks instead of eagerly
+// producing ~45KB of markup for every refresh.
+function buildPopup(attack) {
+    const location = [attack.city, attack.state, attack.country].filter(Boolean).join(', ');
+    const accounts = attack.accounts.length
+        ? attack.accounts.slice(0, MAX_POPUP_ACCOUNTS).join(', ')
+        : 'N/A';
+
+    const body = el('div', 'popup-body');
+    body.appendChild(el('strong', 'popup-title', 'ATTACK DETECTED'));
+    body.appendChild(document.createElement('br'));
+
+    const rows = [
+        ['IP', attack.ip],
+        ['Location', location],
+        ['Failed Attempts', attack.count.toLocaleString()],
+        ['First Seen', formatTimestamp(attack.firstSeen)],
+        ['Last Seen', formatTimestamp(attack.lastSeen)],
+        ['Usernames Tried', accounts]
+    ];
+
+    for (const [label, value] of rows) {
+        body.appendChild(el('strong', null, `${label}: `));
+        body.appendChild(document.createTextNode(String(value)));
+        body.appendChild(document.createElement('br'));
+    }
+    return body;
+}
+
+function plotMarkers() {
+    if (!markerClusterGroup) return;
+    const layers = [];
+
+    for (const attack of attackData) {
+        if (Number.isNaN(attack.lat) || Number.isNaN(attack.lon)) continue;
+
+        const band = severityFor(attack.count);
+        const marker = L.circleMarker([attack.lat, attack.lon], {
+            // Clamped at both ends: a negative count in the source JSON would
+            // otherwise produce a negative radius, which is an invalid SVG
+            // circle and throws inside Leaflet.
+            radius: Math.max(5, Math.min(5 + attack.count / 5, 20)),
+            fillColor: band.fill,
+            color: '#fff',
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.8,
+            className: `attack-marker ${band.cls}`
+        });
+
+        marker.bindPopup(() => buildPopup(attack));
+        layers.push(marker);
+    }
+
+    // One bulk insert instead of N addLayer calls — MarkerCluster can build the
+    // whole cluster tree in a single pass this way.
+    markerClusterGroup.addLayers(layers);
+}
+
+function clearMarkers() {
+    if (markerClusterGroup) markerClusterGroup.clearLayers();
+}
+
+// ========================================
+// FETCH
+// ========================================
+function blobUrlForDate(date) {
+    return `${BLOB_BASE_URL}/attacks_${date}.json`;
+}
+
+async function fetchDataForDate(date) {
+    // 'no-cache' revalidates via ETag so new blobs appear promptly, without the
+    // CDN cache pollution a unique ?v= query string would cause.
+    const response = await fetch(blobUrlForDate(date), { cache: 'no-cache' });
+    if (!response.ok) {
+        if (response.status === 404) throw new Error(`No attack data found for ${date}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+}
+
+// Guards against a slow response for an earlier date landing after a newer one
+// and repainting the dashboard with the wrong day (easy to trigger by clicking
+// through the date picker). Only the most recent request may write state.
+let latestRequestId = 0;
+
 async function fetchAttackData(date = null) {
     const targetDate = date || getTodayDate();
-    const fileName = `attacks_${targetDate}.json`;
-    const url = `${BLOB_BASE_URL}/${fileName}`;
+    const requestId = ++latestRequestId;
 
     try {
-        // 'no-cache' revalidates via ETag so new blobs appear promptly, without the
-        // CDN cache pollution a unique ?v= query string would cause.
-        const response = await fetch(url, { cache: 'no-cache' });
-
-        if (!response.ok) {
-            if (response.status === 404) {
-                throw new Error(`No attack data found for ${targetDate}`);
-            }
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
+        const data = await fetchDataForDate(targetDate);
+        if (requestId !== latestRequestId) return;  // superseded
 
         if (!Array.isArray(data) || data.length === 0) {
             throw new Error(`No attacks recorded for ${targetDate}`);
         }
 
-        attackData = data;
+        attackData = data.map(normalizeAttack);
         updateDashboard();
         hideError();
-
     } catch (error) {
+        if (requestId !== latestRequestId) return;  // superseded
         console.error('Fetch error:', error);
         // "No data yet" is a normal early-in-the-day state, not a failure.
         const noData = /No attack data|No attacks recorded/i.test(error.message);
         if (noData) {
-            showError(`${error.message}. Data is generated periodically — the map will populate automatically once attacks are recorded.`, { persistent: true });
+            showError(`${error.message}. Data is generated periodically — the map will populate automatically once attacks are recorded.`);
             clearDashboard('No attacks recorded yet — check back soon');
         } else {
-            showError(`Could not load attack data: ${error.message}`, { persistent: true });
+            showError(`Could not load attack data: ${error.message}`);
             clearDashboard('Unable to load data');
         }
     }
 }
 
 // ========================================
-// UPDATE DASHBOARD
+// DASHBOARD RENDERING
 // ========================================
 function updateDashboard() {
     clearMarkers();
     updateLeaderboard();
     updateUsernameLeaderboard();
     plotMarkers();
+    fitMapToData();
     updateLastUpdateTime();
 }
 
-// ========================================
-// PLOT MARKERS ON MAP
-// ========================================
-function plotMarkers() {
-    attackData.forEach(attack => {
-        const lat = (attack.lat ?? (attack.Latitude != null ? parseFloat(attack.Latitude) : NaN));
-        const lon = (attack.lon ?? (attack.Longitude != null ? parseFloat(attack.Longitude) : NaN));
-
-        if (isNaN(lat) || isNaN(lon)) {
-            return; // Skip invalid coordinates
-        }
-
-        const attackCount = toCount(attack.attack_count ?? attack.FailureCount);
-
-        // Marker color based on failure count
-        let markerColor = '#00ff00'; // Green (low)
-        if (attackCount > 50) {
-            markerColor = '#ff0000'; // Red (high)
-        } else if (attackCount > 20) {
-            markerColor = '#ff6600'; // Orange (medium)
-        } else if (attackCount > 5) {
-            markerColor = '#ffaa00'; // Yellow (low-medium)
-        }
-
-        const marker = L.circleMarker([lat, lon], {
-            radius: Math.min(5 + (attackCount / 5), 20),
-            fillColor: markerColor,
-            color: '#fff',
-            weight: 1,
-            opacity: 1,
-            fillOpacity: 0.8,
-            className: 'attack-marker'
-        });
-
-        // Ensure CSS glow uses the marker's own severity color (currentColor)
-        marker.on('add', () => {
-            const el = marker.getElement ? marker.getElement() : marker._path;
-            if (el) {
-                el.style.color = markerColor;
-            }
-        });
-
-        // Popup with attack details
-        const ip = attack.ip || attack.IpAddress;
-        const city = attack.city || attack.City || 'Unknown';
-        const state = attack.state || attack.State || '';
-        const country = attack.country || attack.Country || 'Unknown';
-        const firstSeen = attack.first_seen ? formatTimestamp(attack.first_seen) : 'N/A';
-        const lastSeen = attack.last_seen || attack.timestamp;
-
-        // Parse target_accounts (may be a JSON string from KQL) and show up to 5.
-        const accounts = parseAccounts(attack);
-        const accountsDisplay = accounts.length
-            ? accounts.slice(0, 5).map(cleanUsername).join(', ')
-            : 'N/A';
-
-        const popupContent = `
-            <div style="font-family: 'Courier New', monospace; color: #000;">
-                <strong style="color: #ff0000;">ATTACK DETECTED</strong><br>
-                <strong>IP:</strong> ${escapeHtml(ip)}<br>
-                <strong>Location:</strong> ${escapeHtml(city)}${state ? ', ' + escapeHtml(state) : ''}, ${escapeHtml(country)}<br>
-                <strong>Failed Attempts:</strong> ${attackCount}<br>
-                <strong>First Seen:</strong> ${escapeHtml(firstSeen)}<br>
-                <strong>Last Seen:</strong> ${escapeHtml(formatTimestamp(lastSeen))}<br>
-                <strong>Usernames Tried:</strong> ${escapeHtml(accountsDisplay)}
-            </div>
-        `;
-        marker.bindPopup(popupContent);
-
-        markers.push(marker);
-        markerClusterGroup.addLayer(marker);
-    });
-}
-
-// ========================================
-// UPDATE LEADERBOARD PANEL
-// ========================================
 function updateLeaderboard() {
-    // Update ALL leaderboard containers (desktop + mobile clone)
-    const leaderboardContainers = document.querySelectorAll('#leaderboard-container');
+    const container = $('leaderboard-container');
 
-    // Aggregate attacks by country
-    const countryCount = {};
-    attackData.forEach(attack => {
-        const country = attack.country || attack.Country || 'Unknown';
-        const count = toCount(attack.attack_count ?? attack.FailureCount);
-        countryCount[country] = (countryCount[country] || 0) + count;
-    });
+    const byCountry = new Map();
+    for (const attack of attackData) {
+        byCountry.set(attack.country, (byCountry.get(attack.country) || 0) + attack.count);
+    }
 
-    // Get top 5 countries
-    const topCountries = Object.entries(countryCount)
+    const top = [...byCountry.entries()]
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+        .slice(0, LEADERBOARD_SIZE);
 
     // Keep the screen-reader map summary in sync with the visible leaderboard.
-    const summaryEl = document.getElementById('map-summary');
-    if (summaryEl) {
-        summaryEl.textContent = topCountries.length
-            ? `Top attacking countries: ${topCountries.map(([c, n]) => `${c} (${n.toLocaleString()})`).join(', ')}.`
-            : 'No attack data is currently available.';
-    }
+    $('map-summary').textContent = top.length
+        ? `Top attacking countries: ${top.map(([c, n]) => `${c} (${n.toLocaleString()})`).join(', ')}.`
+        : 'No attack data is currently available.';
 
-    if (topCountries.length === 0) {
-        leaderboardContainers.forEach(container => {
-            container.innerHTML = '<p class="loading">No data available</p>';
-        });
+    if (top.length === 0) {
+        container.replaceChildren(notice('No data available'));
         return;
     }
 
-    const maxCount = topCountries[0][1] || 1;
+    const maxCount = top[0][1] || 1;
+    const items = top.map(([country, count], index) => {
+        const item = el('div', 'leaderboard-item');
+        item.appendChild(el('span', 'leaderboard-rank', `#${index + 1}`));
 
-    leaderboardContainers.forEach(leaderboardContainer => {
-        leaderboardContainer.innerHTML = '';
+        const name = el('div', 'leaderboard-country', country);
+        const bar = el('div', 'leaderboard-bar');
+        bar.style.width = `${(count / maxCount) * 100}%`;
+        name.appendChild(bar);
 
-        topCountries.forEach(([country, count], index) => {
-            const item = document.createElement('div');
-            item.className = 'leaderboard-item';
-
-            const barWidth = (count / maxCount) * 100;
-
-            item.innerHTML = `
-                <span class="leaderboard-rank">#${index + 1}</span>
-                <div class="leaderboard-country">
-                    ${escapeHtml(country)}
-                    <div class="leaderboard-bar" style="width: ${barWidth}%"></div>
-                </div>
-                <span class="leaderboard-count">${count.toLocaleString()}</span>
-            `;
-
-            leaderboardContainer.appendChild(item);
-        });
+        item.appendChild(name);
+        item.appendChild(el('span', 'leaderboard-count', count.toLocaleString()));
+        return item;
     });
+
+    container.replaceChildren(...items);
 }
 
-// ========================================
-// UPDATE USERNAME LEADERBOARD
-// ========================================
 function updateUsernameLeaderboard() {
-    // Update ALL username containers (desktop + mobile clone)
-    const usernameContainers = document.querySelectorAll('#username-container');
+    const container = $('username-container');
 
-    // Count how many unique IPs tried each username
-    // This is the clearest metric: "Which usernames are attackers targeting?"
-    const usernameIPs = {}; // username -> Set of IPs
+    // How many unique IPs tried each username — the clearest answer to
+    // "which usernames are attackers targeting?". `accounts` is already
+    // de-duplicated per attack row, so each IP counts once per username.
+    const ipsByUsername = new Map();
+    for (const attack of attackData) {
+        for (const username of attack.accounts) {
+            if (!ipsByUsername.has(username)) ipsByUsername.set(username, new Set());
+            ipsByUsername.get(username).add(attack.ip);
+        }
+    }
 
-    attackData.forEach(attack => {
-        const ip = attack.ip || attack.IpAddress || 'unknown';
-
-        // Count each unique cleaned username once per IP.
-        const seenUsernames = new Set();
-        parseAccounts(attack).forEach(rawUsername => {
-            if (!rawUsername) return;
-            const username = cleanUsername(rawUsername);
-            if (!username || seenUsernames.has(username)) return;
-            seenUsernames.add(username);
-            if (!usernameIPs[username]) {
-                usernameIPs[username] = new Set();
-            }
-            usernameIPs[username].add(ip);
-        });
-    });
-
-    // Get top 5 usernames by number of unique IPs that tried them
-    const topUsernames = Object.entries(usernameIPs)
+    const top = [...ipsByUsername.entries()]
         .map(([username, ips]) => [username, ips.size])
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+        .slice(0, LEADERBOARD_SIZE);
 
-    if (topUsernames.length === 0) {
-        usernameContainers.forEach(container => {
-            container.innerHTML = '<p class="loading">No usernames detected</p>';
-        });
+    if (top.length === 0) {
+        container.replaceChildren(notice('No usernames detected'));
         return;
     }
 
-    usernameContainers.forEach(usernameContainer => {
-        usernameContainer.innerHTML = '';
+    const items = top.map(([username, ipCount]) => {
+        const item = el('div', 'username-item');
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
+        item.setAttribute('aria-label', `Show the IP addresses that tried the username ${username}`);
+        item.appendChild(el('span', 'username-name', username));
+        item.appendChild(el('span', 'username-count', `${ipCount} IPs`));
 
-        topUsernames.forEach(([username, ipCount]) => {
-            const item = document.createElement('div');
-            item.className = 'username-item';
-            item.setAttribute('role', 'button');
-            item.setAttribute('tabindex', '0');
-            item.setAttribute('aria-label', `Show the IP addresses that tried the username ${username}`);
-            item.innerHTML = `
-                <span class="username-name">${escapeHtml(username)}</span>
-                <span class="username-count">${ipCount} IPs</span>
-            `;
-
-            // Clickable AND keyboard-operable (Enter/Space) to show the IP breakdown.
-            const open = () => showUsernameDetail(username);
-            item.addEventListener('click', open);
-            item.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    open();
-                }
-            });
-
-            usernameContainer.appendChild(item);
+        // Clickable AND keyboard-operable (Enter/Space) to show the IP breakdown.
+        item.addEventListener('click', () => showUsernameDetail(username));
+        item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                showUsernameDetail(username);
+            }
         });
+        return item;
     });
+
+    container.replaceChildren(...items);
+}
+
+function clearDashboard(message = 'No data available') {
+    attackData = [];
+    clearMarkers();
+    $('leaderboard-container').replaceChildren(notice(message));
+    $('username-container').replaceChildren(notice(message));
+    // Clear the live region too, or a screen reader keeps announcing the
+    // previous day's countries for a view that now shows nothing.
+    $('map-summary').textContent = message;
+}
+
+function updateLastUpdateTime() {
+    $('last-update').textContent = `${clockFmt.format(new Date())} PT`;
 }
 
 // ========================================
@@ -409,23 +514,25 @@ let lastFocusedElement = null;
 function getFocusable(container) {
     return [...container.querySelectorAll(
         'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
-    )].filter(el => el.offsetParent !== null);
+    )].filter((node) => node.offsetParent !== null);
 }
 
 // Keydown handler active only while a modal is open: Escape closes it, Tab is
 // trapped inside the dialog (standard accessible-dialog behavior).
 function trapFocus(e) {
-    const modal = document.querySelector('.modal-open');
+    const modal = document.querySelector('.modal.is-open');
     if (!modal) return;
     if (e.key === 'Escape') {
         closeModal(modal);
         return;
     }
     if (e.key !== 'Tab') return;
+
     const focusable = getFocusable(modal);
     if (focusable.length === 0) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
+
     if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
@@ -437,297 +544,207 @@ function trapFocus(e) {
 
 function openModal(modal) {
     lastFocusedElement = document.activeElement;
-    modal.style.display = 'flex';
-    modal.classList.add('modal-open');
+    modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
-    const focusable = getFocusable(modal);
-    (focusable[0] || modal).focus();
+    // Focus the dialog container (tabindex="-1") rather than its first control,
+    // so screen readers announce the dialog title before its fields.
+    (modal.querySelector('.modal-content') || modal).focus();
     document.addEventListener('keydown', trapFocus);
 }
 
 function closeModal(modal) {
-    modal.style.display = 'none';
-    modal.classList.remove('modal-open');
+    modal.classList.remove('is-open');
     modal.setAttribute('aria-hidden', 'true');
     document.removeEventListener('keydown', trapFocus);
-    if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
-        lastFocusedElement.focus();
+
+    // Focus must never be left sitting on the dialog we just set to
+    // display:none — keyboard users end up with no focus ring anywhere and the
+    // next Tab restarts from the top of the document.
+    const active = document.activeElement;
+    if (active && modal.contains(active) && typeof active.blur === 'function') {
+        active.blur();
+    }
+
+    const target = lastFocusedElement;
+    lastFocusedElement = null;
+    // Only restore to something still in the document and actually focusable;
+    // <body> is the "nothing was focused" case and is not a useful target.
+    if (target && target !== document.body && target.isConnected &&
+        typeof target.focus === 'function') {
+        target.focus();
     }
 }
 
-// ========================================
-// SHOW USERNAME DETAIL MODAL
-// ========================================
 function showUsernameDetail(username) {
-    const modal = document.getElementById('username-modal');
-    const title = document.getElementById('username-modal-title');
-    const list = document.getElementById('username-modal-list');
+    $('username-modal-title').textContent = `IPs that tried "${username}"`;
 
-    title.textContent = `IPs that tried "${username}"`;
-    list.innerHTML = '';
+    const matching = attackData
+        .filter((attack) => attack.accounts.includes(username))
+        .sort((a, b) => b.count - a.count);
 
-    // Find all IPs that tried this username with distributed counts
-    const matchingAttacks = [];
-    attackData.forEach(attack => {
-        if (parseAccounts(attack).some(acc => cleanUsername(acc) === username)) {
-            matchingAttacks.push(attack);
-        }
-    });
-
-    // Sort by full attack count
-    matchingAttacks.sort((a, b) => {
-        const countA = toCount(a.attack_count ?? a.FailureCount);
-        const countB = toCount(b.attack_count ?? b.FailureCount);
-        return countB - countA;
-    });
-
-    if (matchingAttacks.length === 0) {
-        list.innerHTML = '<p style="color: #888;">No IPs found</p>';
+    const list = $('username-modal-list');
+    if (matching.length === 0) {
+        list.replaceChildren(el('p', 'empty-note', 'No IPs found'));
     } else {
-        matchingAttacks.forEach(attack => {
-            const ip = attack.ip || attack.IpAddress || 'Unknown';
-            const city = attack.city || attack.City || 'Unknown';
-            const country = attack.country || attack.Country || 'Unknown';
-            const count = toCount(attack.attack_count ?? attack.FailureCount);
-
-            const item = document.createElement('div');
-            item.className = 'username-detail-item';
-            item.innerHTML = `
-                <div class="ip">${escapeHtml(ip)}</div>
-                <div class="location">${escapeHtml(city)}, ${escapeHtml(country)}</div>
-                <div class="attempts">${count.toLocaleString()} total attacks</div>
-            `;
-            list.appendChild(item);
-        });
+        list.replaceChildren(...matching.map((attack) => {
+            const item = el('div', 'username-detail-item');
+            item.appendChild(el('div', 'ip', attack.ip));
+            item.appendChild(el('div', 'location', `${attack.city}, ${attack.country}`));
+            item.appendChild(el('div', 'attempts', `${attack.count.toLocaleString()} total attacks`));
+            return item;
+        }));
     }
 
-    openModal(modal);
-}
-
-function closeUsernameModal() {
-    closeModal(document.getElementById('username-modal'));
+    openModal($('username-modal'));
 }
 
 // ========================================
-// CLEAR MARKERS
+// ERROR BANNER
 // ========================================
-function clearMarkers() {
-    markerClusterGroup.clearLayers();
-    markers = [];
-}
-
-// ========================================
-// CLEAR DASHBOARD
-// ========================================
-function clearDashboard(message = 'No data available') {
-    clearMarkers();
-    // Update all containers (desktop + mobile)
-    document.querySelectorAll('#leaderboard-container').forEach(container => {
-        container.innerHTML = `<p class="loading">${escapeHtml(message)}</p>`;
-    });
-    document.querySelectorAll('#username-container').forEach(container => {
-        container.innerHTML = `<p class="loading">${escapeHtml(message)}</p>`;
-    });
-}
-
-// ========================================
-// ERROR HANDLING
-// ========================================
-let errorHideTimer = null;
-
-// persistent: keep the message visible until the next successful fetch
-// (used for "no data yet" and load failures, so the map is never blank
-//  without explanation). Non-persistent messages auto-dismiss.
-function showError(message, { persistent = false } = {}) {
-    const box = document.getElementById('error-message');
-    document.getElementById('error-text').textContent = message;
-    box.style.display = 'block';
-    box.setAttribute('role', 'alert');
-    box.setAttribute('aria-live', 'assertive');
-
-    if (errorHideTimer) { clearTimeout(errorHideTimer); errorHideTimer = null; }
-    if (!persistent) {
-        errorHideTimer = setTimeout(hideError, 6000);
-    }
+// The banner stays up until the next successful fetch, so the map is never
+// blank without an explanation. role/aria-live are declared in the markup.
+function showError(message) {
+    $('error-text').textContent = message;
+    $('error-message').style.display = 'block';
 }
 
 function hideError() {
-    if (errorHideTimer) { clearTimeout(errorHideTimer); errorHideTimer = null; }
-    document.getElementById('error-message').style.display = 'none';
-}
-
-// ========================================
-// UTILITY FUNCTIONS
-// ========================================
-function getTodayDate() {
-    return getDateInPacific(0);
-}
-
-function formatTimestamp(timestamp) {
-    if (!timestamp) return 'N/A';
-    const date = new Date(timestamp);
-    // Convert to Pacific Time
-    return date.toLocaleString('en-US', {
-        timeZone: 'America/Los_Angeles',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-    });
-}
-
-function updateLastUpdateTime() {
-    const now = new Date();
-    // Display in Pacific Time
-    const timeStr = now.toLocaleTimeString('en-US', {
-        timeZone: 'America/Los_Angeles',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-    });
-
-    // Update ALL last-update elements (desktop + mobile)
-    document.querySelectorAll('#last-update').forEach(element => {
-        element.textContent = timeStr + ' PT';
-    });
+    // A successful data fetch doesn't make a blocked map library work again, so
+    // that particular notice is never dismissed.
+    if (mapUnavailable) return;
+    $('error-message').style.display = 'none';
 }
 
 // ========================================
 // MODE SWITCHING
 // ========================================
-function switchToLiveMode() {
-    isLiveMode = true;
+function setMode(live, date) {
+    isLiveMode = live;
 
-    // Update ALL mode indicators (desktop + mobile)
-    document.querySelectorAll('#mode-indicator').forEach(indicator => {
-        indicator.textContent = 'LIVE';
-        indicator.className = 'mode-indicator live';
-    });
+    const indicator = $('mode-indicator');
+    indicator.textContent = live ? 'LIVE' : 'HISTORY';
+    indicator.className = `mode-indicator ${live ? 'live' : 'history'}`;
 
-    // Set date picker to today
-    const today = getTodayDate();
-    document.querySelectorAll('#date-picker').forEach(picker => {
-        picker.value = today;
-    });
+    // `max` is refreshed here as well as at load: a tab left open across
+    // Pacific midnight would otherwise cap the picker at yesterday.
+    const picker = $('date-picker');
+    picker.max = getTodayDate();
+    picker.value = date;
 
-    fetchAttackData();
-    startAutoRefresh();
+    if (live) {
+        fetchAttackData();
+        startAutoRefresh();
+    } else {
+        stopAutoRefresh();
+        // Paint the countdown once more after the timer stops, otherwise it
+        // keeps showing whatever second it froze on instead of PAUSED.
+        renderCountdown();
+        fetchAttackData(date);
+    }
 }
 
-function switchToHistoryMode(date) {
-    isLiveMode = false;
+const switchToLiveMode = () => setMode(true, getTodayDate());
+const switchToHistoryMode = (date) => setMode(false, date);
 
-    // Update ALL mode indicators (desktop + mobile)
-    document.querySelectorAll('#mode-indicator').forEach(indicator => {
-        indicator.textContent = 'HISTORY';
-        indicator.className = 'mode-indicator history';
-    });
-
-    // Set date picker to selected date
-    document.querySelectorAll('#date-picker').forEach(picker => {
-        picker.value = date;
-    });
-
-    stopAutoRefresh();
-    fetchAttackData(date);
+function handleDateChange(e) {
+    const selected = e.target.value;
+    if (!selected || selected === getTodayDate()) {
+        switchToLiveMode();
+    } else {
+        switchToHistoryMode(selected);
+    }
 }
 
 // ========================================
 // AUTO REFRESH
 // ========================================
+// The Logic App writes a new blob every REFRESH_PERIOD_MS on wall-clock
+// boundaries (:00 and :30). Epoch milliseconds line up with those boundaries in
+// any whole-hour timezone, so this needs no timezone conversion at all — the
+// previous version round-tripped through toLocaleString to read the minute hand.
+// REFRESH_BUFFER_MS holds the refetch back until the blob has actually landed.
 function getNextScheduledRefreshTime() {
-    // Logic App runs every 30 minutes (on the hour and half-hour in Pacific Time)
-    // Calculate next :00 or :30 mark in Pacific Time
-    const now = new Date();
-    const pacificTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+    const now = Date.now();
+    // ceil() already lands on or after `now`, so adding the buffer always puts
+    // the target in the future — no further adjustment is reachable.
+    return Math.ceil(now / REFRESH_PERIOD_MS) * REFRESH_PERIOD_MS + REFRESH_BUFFER_MS;
+}
 
-    const currentMinute = pacificTime.getMinutes();
-    const currentSecond = pacificTime.getSeconds();
-
-    let minutesUntilNext;
-    if (currentMinute < 30) {
-        // Next refresh at :30
-        minutesUntilNext = 30 - currentMinute;
-    } else {
-        // Next refresh at next hour :00
-        minutesUntilNext = 60 - currentMinute;
-    }
-
-    // Subtract current seconds to get exact time
-    const secondsUntilNext = (minutesUntilNext * 60) - currentSecond;
-
-    return Date.now() + (secondsUntilNext * 1000);
+// Refetch if the scheduled moment has passed. Called both by the slow interval
+// and by the countdown as it reaches zero, so the display never sits at 00:00
+// waiting up to a full tick for the next poll.
+function refreshIfDue() {
+    if (!isLiveMode || Date.now() < nextAutoRefreshAt) return false;
+    fetchAttackData();
+    nextAutoRefreshAt = getNextScheduledRefreshTime();
+    return true;
 }
 
 function startAutoRefresh() {
-    stopAutoRefresh(); // Clear existing timer
-
-    // Calculate next scheduled refresh time (synced to :00 and :30)
+    stopAutoRefresh();
     nextAutoRefreshAt = getNextScheduledRefreshTime();
-    startAutoRefreshCountdown();
-
-    // Check every minute if we've passed the scheduled time
-    autoRefreshTimer = setInterval(() => {
-        if (isLiveMode && Date.now() >= nextAutoRefreshAt) {
-            fetchAttackData();
-            // Calculate next scheduled time after this refresh
-            nextAutoRefreshAt = getNextScheduledRefreshTime();
-        }
-    }, 60000); // Check every minute instead of waiting full 30 min
+    refreshTimer = setInterval(refreshIfDue, REFRESH_TICK_MS);
+    startCountdown();
 }
 
 function stopAutoRefresh() {
-    if (autoRefreshTimer) {
-        clearInterval(autoRefreshTimer);
-        autoRefreshTimer = null;
-    }
-
-    stopAutoRefreshCountdown();
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+    stopCountdown();
 }
 
-function startAutoRefreshCountdown() {
-    stopAutoRefreshCountdown();
+function renderCountdown() {
+    const target = $('auto-refresh-countdown');
+    if (!isLiveMode) {
+        target.textContent = 'PAUSED';
+        return;
+    }
+    // Hitting zero is the trigger, not just a display state.
+    if (refreshIfDue()) return renderCountdown();
 
-    const render = () => {
-        // Update ALL countdown elements (desktop + mobile)
-        document.querySelectorAll('#auto-refresh-countdown').forEach(countdownEl => {
-            if (!isLiveMode) {
-                countdownEl.textContent = 'PAUSED';
-                return;
-            }
-
-            const remainingMs = Math.max(0, (nextAutoRefreshAt || Date.now()) - Date.now());
-            const remainingSec = Math.ceil(remainingMs / 1000);
-            const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
-            const ss = String(remainingSec % 60).padStart(2, '0');
-            countdownEl.textContent = `${mm}:${ss}`;
-        });
-    };
-
-    render();
-    autoRefreshCountdownTimer = setInterval(render, 1000);
+    const remainingSec = Math.ceil(Math.max(0, nextAutoRefreshAt - Date.now()) / 1000);
+    const mm = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+    const ss = String(remainingSec % 60).padStart(2, '0');
+    target.textContent = `${mm}:${ss}`;
 }
 
-function stopAutoRefreshCountdown() {
-    if (autoRefreshCountdownTimer) {
-        clearInterval(autoRefreshCountdownTimer);
-        autoRefreshCountdownTimer = null;
+function startCountdown() {
+    stopCountdown();
+    renderCountdown();
+    countdownTimer = setInterval(renderCountdown, 1000);
+}
+
+function stopCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+}
+
+// A once-per-second timer is pure battery drain while the tab is backgrounded
+// (and phones background tabs constantly). Suspend it and catch up on return.
+function handleVisibilityChange() {
+    if (document.hidden) {
+        stopCountdown();
+        return;
     }
+    if (!isLiveMode) return;
+
+    // A tab can be backgrounded across Pacific midnight, which changes both the
+    // blob we should be requesting and the picker's ceiling.
+    $('date-picker').max = getTodayDate();
+    refreshIfDue();
+    startCountdown();
 }
 
 // ========================================
 // MOBILE TOGGLE
 // ========================================
+// No cloning: the single set of HUD panels is reflowed into a full-screen
+// overlay by CSS when <body> has the .mobile-open class (see main.css). This
+// avoids duplicate element IDs and keeps a single source of truth in the DOM.
 function setupMobileToggle() {
-    const toggle = document.getElementById('mobile-toggle');
+    const toggle = $('mobile-toggle');
     if (!toggle) return;
 
-    // No cloning: the single set of HUD panels is reflowed into a full-screen
-    // overlay by CSS when <body> has the .mobile-open class (see main.css). This
-    // avoids duplicate element IDs and keeps a single source of truth in the DOM.
     const setOpen = (open) => {
         document.body.classList.toggle('mobile-open', open);
         toggle.setAttribute('aria-expanded', String(open));
@@ -737,81 +754,108 @@ function setupMobileToggle() {
         setOpen(!document.body.classList.contains('mobile-open'));
     });
 
-    // Close the mobile menu with Escape.
+    // Close the mobile menu with Escape — but let an open modal claim Escape first.
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && document.body.classList.contains('mobile-open')) {
-            setOpen(false);
-        }
+        if (e.key !== 'Escape') return;
+        if (document.querySelector('.modal.is-open')) return;
+        if (document.body.classList.contains('mobile-open')) setOpen(false);
     });
-}
-
-function handleDateChange(e) {
-    const selectedDate = e.target.value;
-    if (selectedDate) {
-        // Check if selected date is today
-        const today = getTodayDate();
-        if (selectedDate === today) {
-            switchToLiveMode();
-        } else {
-            switchToHistoryMode(selectedDate);
-        }
-    } else {
-        switchToLiveMode();
-    }
 }
 
 // ========================================
 // AI COMPARISON
 // ========================================
-async function fetchDataForDate(date) {
-    const fileName = `attacks_${date}.json`;
-    const url = `${BLOB_BASE_URL}/${fileName}`;
-    const response = await fetch(url, { cache: 'no-cache' });
-    if (!response.ok) {
-        throw new Error(`No data for ${date}`);
+function setAnalyzeLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.classList.toggle('is-loading', loading);
+    // Swap only the icon slot; the button's markup lives in index.html so it
+    // never has to be duplicated as a string here.
+    btn.querySelector('.btn-icon').innerHTML = loading
+        ? '<div class="ai-spinner"></div>'
+        : analyzeIconHtml;
+}
+
+function renderAiError(message, full = false) {
+    const box = el('div', full ? 'ai-error ai-error-full' : 'ai-error');
+    box.setAttribute('role', 'alert');
+    if (full) {
+        box.appendChild(el('strong', null, 'Analysis Failed'));
+        box.appendChild(document.createElement('br'));
     }
-    return response.json();
+    box.appendChild(document.createTextNode(message));
+    $('ai-results-area').replaceChildren(box);
+}
+
+// Model fields are contractually strings, but coerce defensively so an object
+// renders as readable JSON instead of "[object Object]".
+function asText(value, fallback) {
+    if (value == null || value === '') return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
+}
+
+function renderAiResult(result) {
+    const summary = el('div', 'ai-summary');
+    summary.appendChild(el('h4', null, 'Executive Summary'));
+    summary.appendChild(el('p', null, asText(result.summary, 'Analysis complete.')));
+
+    const sections = el('div', 'ai-sections');
+    for (const { key, label, fallback } of AI_SECTIONS) {
+        const section = el('div', 'ai-section');
+        section.appendChild(el('h4', null, label));
+        section.appendChild(el('p', null, asText(result[key], fallback)));
+        sections.appendChild(section);
+    }
+
+    $('ai-results-area').replaceChildren(summary, sections);
 }
 
 async function compareWithAI() {
-    const date1 = document.getElementById('ai-date1').value;
-    const date2 = document.getElementById('ai-date2').value;
-    const btn = document.getElementById('ai-compare-btn');
-    const resultsArea = document.getElementById('ai-results-area');
+    const date1 = $('ai-date1').value;
+    const date2 = $('ai-date2').value;
+    const btn = $('ai-compare-btn');
 
     if (!date1 || !date2) {
-        resultsArea.innerHTML = '<div class="ai-error" role="alert">Please select both a baseline and a comparison date.</div>';
+        renderAiError('Please select both a baseline and a comparison date.');
         return;
     }
-
     if (date1 === date2) {
-        resultsArea.innerHTML = '<div class="ai-error" role="alert">Please choose two different dates to compare.</div>';
+        renderAiError('Please choose two different dates to compare.');
         return;
     }
 
-    // Show loading state
-    btn.disabled = true;
-    btn.innerHTML = '<div class="ai-spinner"></div>';
-    resultsArea.innerHTML = `
-        <div class="ai-loading" style="justify-content: center; height: 100%; flex-direction: column;">
-            <div class="ai-spinner" style="width: 40px; height: 40px; border-width: 4px; margin-bottom: 15px;"></div>
-            <div style="color: #a78bfa; font-size: 16px;">Analyzing attack telemetry...</div>
-        </div>
-    `;
+    setAnalyzeLoading(btn, true);
+    const loading = el('div', 'ai-loading ai-loading-full');
+    loading.appendChild(el('div', 'ai-spinner'));
+    loading.appendChild(el('div', 'ai-loading-label', 'Analyzing attack telemetry...'));
+    $('ai-results-area').replaceChildren(loading);
 
     try {
-        // Fetch data for both dates
         const [data1, data2] = await Promise.all([
             fetchDataForDate(date1),
             fetchDataForDate(date2)
         ]);
 
-        // Call Azure Function
-        const response = await fetch(AI_FUNCTION_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ date1, date2, data1, data2 })
-        });
+        let response;
+        try {
+            response = await fetch(AI_FUNCTION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date1, date2, data1, data2 })
+            });
+        } catch (_) {
+            // fetch() rejects with a bare "Failed to fetch" TypeError for every
+            // network-level failure, which tells the user nothing. By far the
+            // most common cause here is the Function's CORS allowlist not
+            // containing this page's origin (serving from localhost or a new
+            // custom domain), so name that explicitly.
+            throw new Error(
+                `Could not reach the analysis service from ${location.origin}. ` +
+                `This is usually the origin missing from the Function's ALLOWED_ORIGIN setting, ` +
+                `or the service being offline.`
+            );
+        }
 
         if (!response.ok) {
             // Error bodies aren't always JSON (e.g. a 404 from an undeployed
@@ -836,135 +880,79 @@ async function compareWithAI() {
             throw new Error('The analysis service returned an empty or invalid response.');
         }
 
-        // Helper to safely display any value (handles objects/arrays)
-        const safeDisplay = (val, fallback = 'No data.') => {
-            if (!val) return fallback;
-            if (typeof val === 'string') return val;
-            if (typeof val === 'object') return JSON.stringify(val, null, 2);
-            return String(val);
-        };
-
-        // Format structured JSON output
-        let html = `
-            <div style="margin-bottom: 20px; padding: 15px; background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; border-radius: 4px;">
-                <h4 style="margin: 0 0 5px 0; color: #a78bfa; text-transform: uppercase; font-size: 12px;">Executive Summary</h4>
-                <p style="margin: 0; color: #fff; font-size: 15px; font-weight: 500;">${escapeHtml(safeDisplay(result.summary, 'Analysis complete.'))}</p>
-            </div>
-
-            <div style="display: grid; gap: 20px;">
-                <div>
-                    <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Attack Volume</h4>
-                    <p>${escapeHtml(safeDisplay(result.attack_volume, 'No significant changes.'))}</p>
-                </div>
-
-                <div>
-                    <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Geographic Shifts</h4>
-                    <p>${escapeHtml(safeDisplay(result.geographic_shifts, 'No significant changes.'))}</p>
-                </div>
-
-                <div>
-                    <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Notable IPs</h4>
-                    <p>${escapeHtml(safeDisplay(result.notable_ips, 'None detected.'))}</p>
-                </div>
-
-                <div>
-                    <h4 style="color: #00ffff; margin-bottom: 8px; border-bottom: 1px solid rgba(0,255,255,0.2); padding-bottom: 4px;">Target Behavior</h4>
-                    <p>${escapeHtml(safeDisplay(result.target_behavior, 'No significant changes.'))}</p>
-                </div>
-            </div>
-        `;
-
-        resultsArea.innerHTML = html;
-
+        renderAiResult(result);
     } catch (error) {
-        resultsArea.innerHTML = `
-            <div class="ai-error" style="text-align: center; margin-top: 50px;">
-                <strong>Analysis Failed</strong><br>
-                ${escapeHtml(error.message)}
-            </div>
-        `;
+        renderAiError(error.message, true);
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Analyze`;
+        setAnalyzeLoading(btn, false);
     }
 }
 
 // ========================================
-// EVENT LISTENERS
-// ========================================
-// Close username modal
-document.getElementById('username-modal-close').addEventListener('click', closeUsernameModal);
-document.getElementById('username-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'username-modal') {
-        closeUsernameModal();
-    }
-});
-
-document.getElementById('date-picker').addEventListener('change', handleDateChange);
-
-// AI Modal Controls
-const aiModal = document.getElementById('ai-modal');
-
-document.getElementById('ai-panel-open-btn').addEventListener('click', () => {
-    openModal(aiModal);
-});
-
-document.getElementById('ai-modal-close').addEventListener('click', () => {
-    closeModal(aiModal);
-});
-
-aiModal.addEventListener('click', (e) => {
-    if (e.target === aiModal) closeModal(aiModal);
-});
-
-document.getElementById('ai-compare-btn').addEventListener('click', compareWithAI);
-
-// ========================================
 // INITIALIZATION
 // ========================================
-window.addEventListener('load', () => {
-    // Fail gracefully if the map library CDN didn't load (offline, blocked, or an
-    // SRI mismatch) instead of throwing a ReferenceError and showing a black screen.
-    if (typeof L === 'undefined' || typeof L.markerClusterGroup !== 'function') {
-        showError('The map library failed to load. Check your connection or content blockers, then refresh the page.', { persistent: true });
-        return;
-    }
+function bindEvents() {
+    $('date-picker').addEventListener('change', handleDateChange);
 
-    // Set max date for date picker to today
-    const today = getTodayDate();
-    document.querySelectorAll('#date-picker').forEach(picker => {
-        picker.max = today;
-        picker.value = today; // Set initial value to today
+    const usernameModal = $('username-modal');
+    $('username-modal-close').addEventListener('click', () => closeModal(usernameModal));
+    usernameModal.addEventListener('click', (e) => {
+        if (e.target === usernameModal) closeModal(usernameModal);
     });
 
-    // Initialize AI date pickers
-    const aiDate1 = document.getElementById('ai-date1');
-    const aiDate2 = document.getElementById('ai-date2');
-    if (aiDate1 && aiDate2) {
-        aiDate1.max = today;
-        aiDate2.max = today;
-        // Default to yesterday vs today (both in Pacific Time for consistency).
-        aiDate1.value = getDateInPacific(-1);
-        aiDate2.value = today;
+    const aiModal = $('ai-modal');
+    $('ai-panel-open-btn').addEventListener('click', () => openModal(aiModal));
+    $('ai-modal-close').addEventListener('click', () => closeModal(aiModal));
+    aiModal.addEventListener('click', (e) => {
+        if (e.target === aiModal) closeModal(aiModal);
+    });
+    $('ai-compare-btn').addEventListener('click', compareWithAI);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+}
+
+function initDatePickers() {
+    const today = getTodayDate();
+
+    const picker = $('date-picker');
+    picker.max = today;
+    picker.value = today;
+
+    const aiDate1 = $('ai-date1');
+    const aiDate2 = $('ai-date2');
+    aiDate1.max = today;
+    aiDate2.max = today;
+    // Default to yesterday vs today (both in Pacific Time for consistency).
+    aiDate1.value = getDateInPacific(-1);
+    aiDate2.value = today;
+}
+
+function init() {
+    // None of this depends on Leaflet, so it is wired up before the map check:
+    // if the CDN is blocked (offline, content blocker, SRI mismatch) the
+    // leaderboards, date picker, mobile menu and AI tool all still work rather
+    // than the whole page dying alongside the map.
+    analyzeIconHtml = $('ai-compare-btn').querySelector('.btn-icon').innerHTML;
+    initDatePickers();
+    setupMobileToggle();
+    bindEvents();
+
+    if (typeof L === 'undefined' || typeof L.markerClusterGroup !== 'function') {
+        mapUnavailable = true;
+        showError('The map library failed to load, so the map is unavailable — the leaderboards below still update. Check your connection or content blockers, then refresh.');
+    } else {
+        initMap();
     }
 
-    // Setup mobile toggle
-    setupMobileToggle();
-
-    // Initialize map
-    initMap();
-
-    // Start in live mode
     switchToLiveMode();
-});
+}
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    stopAutoRefresh();
-});
+// Run as soon as the DOM is parsed. Waiting for 'load' also waited on every
+// CDN stylesheet, script and map tile before the first fetch even started.
+// (No 'beforeunload' handler: it blocks the back/forward cache, and the
+//  interval timers this page owns are torn down by the browser anyway.)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+} else {
+    init();
+}

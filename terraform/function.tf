@@ -42,6 +42,11 @@ resource "azurerm_linux_function_app" "analysis" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
 
+  # Defaults to false in azurerm 3.x, which would leave this endpoint — the one
+  # holding the paid GEMINI_API_KEY and rate-limiting on caller IP — answering
+  # over plaintext HTTP for any non-browser caller.
+  https_only = true
+
   storage_account_name       = azurerm_storage_account.functions.name
   storage_account_access_key = azurerm_storage_account.functions.primary_access_key
   service_plan_id            = azurerm_service_plan.functions.id

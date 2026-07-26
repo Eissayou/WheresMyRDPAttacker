@@ -9,6 +9,12 @@ on:
     branches:
       - main
 
+# Two pushes in quick succession could otherwise finish out of order and leave
+# the older commit live. Newer runs supersede in-flight ones for the same ref.
+concurrency:
+  group: swa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_and_deploy_job:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
@@ -22,15 +28,13 @@ jobs:
         with:
           submodules: true
           lfs: false
-      - name: Install OIDC Client from Core Package
-        run: npm install @actions/core@1.6.0 @actions/http-client
+      # github-script already injects a `core` instance, so the npm install of
+      # @actions/core this used to do was a wasted step on every single run.
       - name: Get Id Token
         uses: actions/github-script@v7
         id: idtoken
         with:
-           script: |
-               const coredemo = require('@actions/core')
-               return await coredemo.getIDToken()
+           script: return await core.getIDToken()
            result-encoding: string
       - name: Build And Deploy
         id: builddeploy
