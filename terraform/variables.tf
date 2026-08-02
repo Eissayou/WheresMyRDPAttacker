@@ -13,9 +13,9 @@ variable "location" {
 }
 
 variable "allowed_origin" {
-  description = "Origin permitted to call the AI compare endpoint (the deployed site URL)."
+  description = "Comma-separated origins permitted to call the AI compare endpoint (custom domain + legacy SWA hostname)."
   type        = string
-  default     = "https://orange-wave-0061ed81e.6.azurestaticapps.net"
+  default     = "https://honeypot.eissayou.com,https://orange-wave-0061ed81e.6.azurestaticapps.net"
 }
 
 variable "tags" {

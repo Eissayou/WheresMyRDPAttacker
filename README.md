@@ -13,7 +13,7 @@ Built by [Jason Eissayou](https://www.eissayou.com).
 
 This project deploys a Windows VM as a honeypot with RDP exposed to the internet. Failed login attempts are captured via Windows Security Events, aggregated through an Azure Logic App (KQL), written to Blob Storage as daily JSON, and visualized on an interactive map. A Python Azure Function adds AI-powered trend analysis (Google Gemini) comparing any two days.
 
-**Live demo**: [orange-wave-0061ed81e.6.azurestaticapps.net](https://orange-wave-0061ed81e.6.azurestaticapps.net/)
+**Live demo**: [honeypot.eissayou.com](https://honeypot.eissayou.com/)
 
 ## Architecture
 
@@ -110,7 +110,7 @@ func start
 > it when you're done. Origins must match exactly, including scheme and port:
 >
 > ```
-> ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net,http://localhost:8081
+> ALLOWED_ORIGIN=https://honeypot.eissayou.com,https://orange-wave-0061ed81e.6.azurestaticapps.net,http://localhost:8081
 > ```
 >
 > The same applies when moving to a custom domain — see
@@ -139,6 +139,12 @@ terraform apply
 The static site itself deploys automatically via GitHub Actions on push to `main`. See [terraform/README.md](terraform/README.md) and [TERRAFORM_COMPLETE_SETUP.md](TERRAFORM_COMPLETE_SETUP.md) for complete instructions.
 
 ## Moving to a custom domain
+
+Done: the site lives at **[honeypot.eissayou.com](https://honeypot.eissayou.com/)**
+(an unproxied Cloudflare CNAME to the Static Web App; Azure issues the managed
+certificate). The legacy `orange-wave-0061ed81e.6.azurestaticapps.net` hostname
+still serves the same content with a canonical pointing at the custom domain,
+and both origins remain in the Function's CORS allowlists.
 
 Hostnames are referenced in a handful of places. Changing the site origin means
 updating all of them, or SEO tags and the CSP will point at the old address:

@@ -57,7 +57,8 @@ ANALYSIS_FIELDS = ("summary", "attack_volume", "geographic_shifts", "notable_ips
 ALLOWED_ORIGINS = tuple(
     o.strip()
     for o in os.environ.get(
-        "ALLOWED_ORIGIN", "https://orange-wave-0061ed81e.6.azurestaticapps.net"
+        "ALLOWED_ORIGIN",
+        "https://honeypot.eissayou.com,https://orange-wave-0061ed81e.6.azurestaticapps.net",
     ).split(",")
     if o.strip()
 )

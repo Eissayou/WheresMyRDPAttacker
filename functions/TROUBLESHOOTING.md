@@ -178,7 +178,7 @@ For a **custom domain**, add it permanently to the `ALLOWED_ORIGIN` app setting
 
 | Setting | Value |
 |---------|-------|
-| `ALLOWED_ORIGIN` | `https://orange-wave-0061ed81e.6.azurestaticapps.net,https://www.yourdomain.com` |
+| `ALLOWED_ORIGIN` | `https://honeypot.eissayou.com,https://orange-wave-0061ed81e.6.azurestaticapps.net` |
 
 For **local development**, add your origin the same way but treat it as
 temporary, and remove it when you're finished:
@@ -187,12 +187,12 @@ temporary, and remove it when you're finished:
 # enable local access
 az functionapp config appsettings set \
   --name AIAnalysis --resource-group <your-rg> \
-  --settings "ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net,http://localhost:8081"
+  --settings "ALLOWED_ORIGIN=https://honeypot.eissayou.com,https://orange-wave-0061ed81e.6.azurestaticapps.net,http://localhost:8081"
 
 # revert to production-only when done
 az functionapp config appsettings set \
   --name AIAnalysis --resource-group <your-rg> \
-  --settings "ALLOWED_ORIGIN=https://orange-wave-0061ed81e.6.azurestaticapps.net"
+  --settings "ALLOWED_ORIGIN=https://honeypot.eissayou.com,https://orange-wave-0061ed81e.6.azurestaticapps.net"
 ```
 
 And for the platform layer:
@@ -208,8 +208,8 @@ az functionapp cors remove -g HONEYY -n AIAnalysis --allowed-origins "http://127
 > **anyone** serving a page on that port call this endpoint and spend your Gemini
 > quota. The per-IP (5/day) and global (50/day) rate limits cap the damage but
 > don't prevent it. Current production allowlist is deliberately just
-> `https://portal.azure.com` (for the portal's Code+Test console) and the Static
-> Web App origin.
+> `https://portal.azure.com` (for the portal's Code+Test console), the custom
+> domain `https://honeypot.eissayou.com`, and the legacy Static Web App origin.
 
 ---
 
