@@ -91,11 +91,7 @@
 
     <!-- Performance: warm up third-party origins -->
     <link rel="preconnect" href="https://unpkg.com" crossorigin>
-    <!-- Tiles come from the a-d subdomains, so the bare apex host was a
-         connection to an origin the page never actually uses. Warm the two
-         subdomains the first screenful of tiles hits. -->
-    <link rel="preconnect" href="https://a.basemaps.cartocdn.com">
-    <link rel="preconnect" href="https://b.basemaps.cartocdn.com">
+    <link rel="preconnect" href="https://tile.openstreetmap.org">
     <link rel="preconnect" href="https://honeypotpublicdata.blob.core.windows.net">
 
     <!-- Leaflet CSS -->
